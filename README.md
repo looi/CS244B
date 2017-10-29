@@ -32,4 +32,6 @@ With server running, in another terminal, run `bin/greeter_client` to get expect
 
 ```shell
 Greeter received: Hello world
+Greeter received chunk data: this#is#data
+Greeter Write Chunk returned: 0
 ```
