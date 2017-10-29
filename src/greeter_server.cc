@@ -19,6 +19,7 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <inttypes.h>
 
 #include <grpc++/grpc++.h>
 #include "helloworld.grpc.pb.h"
@@ -29,7 +30,12 @@ using grpc::ServerContext;
 using grpc::Status;
 using helloworld::HelloRequest;
 using helloworld::HelloReply;
+using helloworld::ReadChunkRequest;
+using helloworld::ReadChunkReply;
+using helloworld::WriteChunkRequest;
+using helloworld::WriteChunkReply;
 using helloworld::Greeter;
+using helloworld::ErrorCode;
 
 // Logic and data behind the server's behavior.
 class GreeterServiceImpl final : public Greeter::Service {
@@ -39,10 +45,26 @@ class GreeterServiceImpl final : public Greeter::Service {
     reply->set_message(prefix + request->name());
     return Status::OK;
   }
+
+  Status ReadChunk(ServerContext* context, const ReadChunkRequest* request,
+                  ReadChunkReply* reply) override {
+    std::string chunk_data("this#is#data");
+    reply->set_data(chunk_data);
+    return Status::OK;
+  }
+
+  Status WriteChunk(ServerContext* context, const WriteChunkRequest* request,
+                  WriteChunkReply* reply) override {
+    std::cout << "Got server WriteChunk for chunk_id = " << \
+              request->chunk_id() << " and data = " << request->data() << \
+              std::endl;
+    reply->set_error_code(ErrorCode::SUCCESS);
+    return Status::OK;
+  }
 };
 
 void RunServer() {
-  std::string server_address("0.0.0.0:50051");
+  std::string server_address("127.0.0.1:50051");
   GreeterServiceImpl service;
 
   ServerBuilder builder;

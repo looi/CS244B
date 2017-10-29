@@ -21,8 +21,17 @@ option objc_class_prefix = "HLW";
 
 package helloworld;
 
+enum ErrorCode {
+  SUCCESS = 0;
+  FAILED = 1;
+}
+
 // The greeting service definition.
 service Greeter {
+  // Read data
+  rpc ReadChunk (ReadChunkRequest) returns (ReadChunkReply) {}
+  // Write data
+  rpc WriteChunk (WriteChunkRequest) returns (WriteChunkReply) {}
   // Sends a greeting
   rpc SayHello (HelloRequest) returns (HelloReply) {}
 }
@@ -35,4 +44,27 @@ message HelloRequest {
 // The response message containing the greetings
 message HelloReply {
   string message = 1;
+}
+
+// Read Chunk Request
+message ReadChunkRequest {
+  int64 chunk_id = 1;
+}
+
+// Write Chunk Request
+message WriteChunkRequest {
+  int64 chunk_id = 1;
+  string data = 2;
+// TODO: hash of the data
+}
+
+// Read Chunk Reply
+message ReadChunkReply {
+  string data = 2;
+// TODO: hash of the data
+}
+
+// Write Chunk Reply
+message WriteChunkReply {
+  ErrorCode error_code = 1;
 }

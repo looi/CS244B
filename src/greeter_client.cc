@@ -19,6 +19,7 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <inttypes.h>
 
 #include <grpc++/grpc++.h>
 #include "helloworld.grpc.pb.h"
@@ -28,7 +29,12 @@ using grpc::ClientContext;
 using grpc::Status;
 using helloworld::HelloRequest;
 using helloworld::HelloReply;
+using helloworld::ReadChunkRequest;
+using helloworld::ReadChunkReply;
+using helloworld::WriteChunkRequest;
+using helloworld::WriteChunkReply;
 using helloworld::Greeter;
+using helloworld::ErrorCode;
 
 class GreeterClient {
  public:
@@ -62,6 +68,61 @@ class GreeterClient {
     }
   }
 
+  // Client ReadChunk implementation
+  std::string ReadChunk(const int chunk_id) {
+    // Data we are sending to the server.
+    ReadChunkRequest request;
+    request.set_chunk_id(chunk_id);
+
+    // Container for the data we expect from the server.
+    ReadChunkReply reply;
+
+    // Context for the client. It could be used to convey extra information to
+    // the server and/or tweak certain RPC behaviors.
+    ClientContext context;
+
+    // The actual RPC.
+    Status status = stub_->ReadChunk(&context, request, &reply);
+
+    // Act upon its status.
+    if (status.ok()) {
+      return reply.data();
+    } else {
+      std::cout << status.error_code() << ": " << status.error_message()
+                << std::endl;
+      return "RPC failed";
+    }
+  }
+
+  // Client WriteChunk implementation
+  std::string WriteChunk(const int chunk_id, const std::string data) {
+    // Data we are sending to the server.
+    WriteChunkRequest request;
+    request.set_chunk_id(chunk_id);
+    request.set_data(data);
+
+    // Container for the data we expect from the server.
+    WriteChunkReply reply;
+
+    // Context for the client. It could be used to convey extra information to
+    // the server and/or tweak certain RPC behaviors.
+    ClientContext context;
+
+    // The actual RPC.
+    Status status = stub_->WriteChunk(&context, request, &reply);
+
+    // Act upon its status.
+    if (status.ok()) {
+      std::cout << "Greeter Write Chunk returned: " << reply.error_code() << \
+                std::endl;
+      return "RPC succeeded";
+    } else {
+      std::cout << status.error_code() << ": " << status.error_message()
+                << std::endl;
+      return "RPC failed";
+    }
+  }
+
  private:
   std::unique_ptr<Greeter::Stub> stub_;
 };
@@ -72,10 +133,14 @@ int main(int argc, char** argv) {
   // localhost at port 50051). We indicate that the channel isn't authenticated
   // (use of InsecureChannelCredentials()).
   GreeterClient greeter(grpc::CreateChannel(
-      "localhost:50051", grpc::InsecureChannelCredentials()));
+      "127.0.0.1:50051", grpc::InsecureChannelCredentials()));
   std::string user("world");
   std::string reply = greeter.SayHello(user);
   std::cout << "Greeter received: " << reply << std::endl;
 
+  std::string data = greeter.ReadChunk(10);
+  std::cout << "Greeter received chunk data: " << data << std::endl;
+
+  std::string rpc_result = greeter.WriteChunk(10, data);
   return 0;
 }
