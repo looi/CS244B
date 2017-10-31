@@ -22,16 +22,16 @@ cd ../../..                 # back to CS244B root folder
 make                        # builds CS244B project
 ```
 
-In one terminal, run `bin/greeter_server` to get expected output:
+In one terminal, run `bin/gfs_server` to get expected output:
 
 ```shell
 Server listening on 0.0.0.0:50051
 ```
 
-With server running, in another terminal, run `bin/greeter_client` to get expected output:
+With server running, in another terminal, run `bin/gfs_client` to get expected output:
 
 ```shell
-Greeter received: Hello world
-Greeter received chunk data: this#is#data
-Greeter Write Chunk returned: 0
+Client received: Hello world
+Client received chunk data: this#is#data
+Write Chunk returned: 0
 ```

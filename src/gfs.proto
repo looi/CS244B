@@ -19,30 +19,30 @@ option java_package = "io.grpc.examples.helloworld";
 option java_outer_classname = "HelloWorldProto";
 option objc_class_prefix = "HLW";
 
-package helloworld;
+package gfs;
 
 enum ErrorCode {
   SUCCESS = 0;
   FAILED = 1;
 }
 
-// The greeting service definition.
-service Greeter {
+// The GFS service definition.
+service GFS {
   // Read data
   rpc ReadChunk (ReadChunkRequest) returns (ReadChunkReply) {}
   // Write data
   rpc WriteChunk (WriteChunkRequest) returns (WriteChunkReply) {}
-  // Sends a greeting
-  rpc SayHello (HelloRequest) returns (HelloReply) {}
+  // Sends a ping
+  rpc ClientServerPing (PingRequest) returns (PingReply) {}
 }
 
 // The request message containing the user's name.
-message HelloRequest {
+message PingRequest {
   string name = 1;
 }
 
-// The response message containing the greetings
-message HelloReply {
+// The response message containing the greeting
+message PingReply {
   string message = 1;
 }
 
