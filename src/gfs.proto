@@ -48,19 +48,20 @@ message PingReply {
 
 // Read Chunk Request
 message ReadChunkRequest {
-  int64 chunk_id = 1;
+  int64 chunkhandle = 1;
 }
 
 // Write Chunk Request
 message WriteChunkRequest {
-  int64 chunk_id = 1;
+  int64 chunkhandle = 1;
   string data = 2;
 // TODO: hash of the data
 }
 
 // Read Chunk Reply
 message ReadChunkReply {
-  string data = 2;
+  string data = 1;
+  ErrorCode error_code = 2;
 // TODO: hash of the data
 }
 

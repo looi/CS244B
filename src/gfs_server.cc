@@ -17,6 +17,7 @@
  */
 
 #include <iostream>
+#include <fstream>
 #include <memory>
 #include <string>
 #include <inttypes.h>
@@ -39,33 +40,67 @@ using gfs::ErrorCode;
 
 // Logic and data behind the server's behavior.
 class GFSServiceImpl final : public GFS::Service {
+public:
+  GFSServiceImpl(std::string path) {
+    this->full_path = path;
+  }
+
   Status ClientServerPing(ServerContext* context, const PingRequest* request,
-                  PingReply* reply) override {
+                          PingReply* reply) override {
     std::string prefix("Hello ");
     reply->set_message(prefix + request->name());
     return Status::OK;
   }
 
   Status ReadChunk(ServerContext* context, const ReadChunkRequest* request,
-                  ReadChunkReply* reply) override {
-    std::string chunk_data("this#is#data");
-    reply->set_data(chunk_data);
+                   ReadChunkReply* reply) override {
+    std::string chunk_data;
+    std::ifstream infile;
+    std::string filename = this->full_path + "/" +
+        std::to_string(request->chunkhandle());
+
+    infile.open(filename.c_str(), std::ios::in);
+    if (!infile) {
+      std::cout << "can't open file for reading: " << filename << std::endl;
+      reply->set_error_code(ErrorCode::FAILED);
+    } else {
+      infile >> chunk_data;
+      infile.close();
+      reply->set_data(chunk_data);
+      reply->set_error_code(ErrorCode::SUCCESS);
+    }
+
     return Status::OK;
   }
 
   Status WriteChunk(ServerContext* context, const WriteChunkRequest* request,
-                  WriteChunkReply* reply) override {
-    std::cout << "Got server WriteChunk for chunk_id = " << \
-              request->chunk_id() << " and data = " << request->data() << \
+                    WriteChunkReply* reply) override {
+    std::cout << "Got server WriteChunk for chunkhandle = " << \
+              request->chunkhandle() << " and data = " << request->data() << \
               std::endl;
-    reply->set_error_code(ErrorCode::SUCCESS);
+
+    std::ofstream outfile;
+    std::string filename = this->full_path + "/" +
+        std::to_string(request->chunkhandle());
+    outfile.open(filename.c_str(), std::ios::out);
+    if (!outfile) {
+      std::cout << "can't open file for writing: " << filename << std::endl;
+      reply->set_error_code(ErrorCode::FAILED);
+    } else {
+      outfile << request->data();
+      outfile.close();
+      reply->set_error_code(ErrorCode::SUCCESS);
+    }
     return Status::OK;
   }
+
+ private:
+  std::string full_path;
 };
 
-void RunServer() {
+void RunServer(std::string path) {
   std::string server_address("127.0.0.1:50051");
-  GFSServiceImpl service;
+  GFSServiceImpl service(path);
 
   ServerBuilder builder;
   // Listen on the given address without any authentication mechanism.
@@ -83,7 +118,11 @@ void RunServer() {
 }
 
 int main(int argc, char** argv) {
-  RunServer();
+  if (argc != 2) {
+    std::cout << "Usage: gfs_server path_to_local_file_directory" << std::endl;
+    return 1;
+  }
+  RunServer(argv[1]);
 
   return 0;
 }

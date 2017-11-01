@@ -22,7 +22,7 @@ cd ../../..                 # back to CS244B root folder
 make                        # builds CS244B project
 ```
 
-In one terminal, run `bin/gfs_server` to get expected output:
+In one terminal, run `bin/gfs_server <path to local directory>` to get expected output:
 
 ```shell
 Server listening on 0.0.0.0:50051
@@ -32,6 +32,35 @@ With server running, in another terminal, run `bin/gfs_client` to get expected o
 
 ```shell
 Client received: Hello world
-Client received chunk data: this#is#data
 Write Chunk returned: 0
+Client received chunk data: new#data0
+Client received: Hello world
+Write Chunk returned: 0
+Client received chunk data: new#data1
+Client received: Hello world
+Write Chunk returned: 0
+Client received chunk data: new#data2
+Client received: Hello world
+Write Chunk returned: 0
+Client received chunk data: new#data3
+Client received: Hello world
+Write Chunk returned: 0
+Client received chunk data: new#data4
+Client received: Hello world
+Write Chunk returned: 0
+Client received chunk data: new#data5
+Client received: Hello world
+Write Chunk returned: 0
+Client received chunk data: new#data6
+Client received: Hello world
+Write Chunk returned: 0
+Client received chunk data: new#data7
+Client received: Hello world
+Write Chunk returned: 0
+Client received chunk data: new#data8
+Client received: Hello world
+Write Chunk returned: 0
+Client received chunk data: new#data9
 ```
+
+The local directory should also contain the 10 files with the data the client provided.
