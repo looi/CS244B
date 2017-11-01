@@ -22,25 +22,25 @@
 #include <inttypes.h>
 
 #include <grpc++/grpc++.h>
-#include "helloworld.grpc.pb.h"
+#include "gfs.grpc.pb.h"
 
 using grpc::Server;
 using grpc::ServerBuilder;
 using grpc::ServerContext;
 using grpc::Status;
-using helloworld::HelloRequest;
-using helloworld::HelloReply;
-using helloworld::ReadChunkRequest;
-using helloworld::ReadChunkReply;
-using helloworld::WriteChunkRequest;
-using helloworld::WriteChunkReply;
-using helloworld::Greeter;
-using helloworld::ErrorCode;
+using gfs::PingRequest;
+using gfs::PingReply;
+using gfs::ReadChunkRequest;
+using gfs::ReadChunkReply;
+using gfs::WriteChunkRequest;
+using gfs::WriteChunkReply;
+using gfs::GFS;
+using gfs::ErrorCode;
 
 // Logic and data behind the server's behavior.
-class GreeterServiceImpl final : public Greeter::Service {
-  Status SayHello(ServerContext* context, const HelloRequest* request,
-                  HelloReply* reply) override {
+class GFSServiceImpl final : public GFS::Service {
+  Status ClientServerPing(ServerContext* context, const PingRequest* request,
+                  PingReply* reply) override {
     std::string prefix("Hello ");
     reply->set_message(prefix + request->name());
     return Status::OK;
@@ -65,7 +65,7 @@ class GreeterServiceImpl final : public Greeter::Service {
 
 void RunServer() {
   std::string server_address("127.0.0.1:50051");
-  GreeterServiceImpl service;
+  GFSServiceImpl service;
 
   ServerBuilder builder;
   // Listen on the given address without any authentication mechanism.

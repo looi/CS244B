@@ -22,41 +22,41 @@
 #include <inttypes.h>
 
 #include <grpc++/grpc++.h>
-#include "helloworld.grpc.pb.h"
+#include "gfs.grpc.pb.h"
 
 using grpc::Channel;
 using grpc::ClientContext;
 using grpc::Status;
-using helloworld::HelloRequest;
-using helloworld::HelloReply;
-using helloworld::ReadChunkRequest;
-using helloworld::ReadChunkReply;
-using helloworld::WriteChunkRequest;
-using helloworld::WriteChunkReply;
-using helloworld::Greeter;
-using helloworld::ErrorCode;
+using gfs::PingRequest;
+using gfs::PingReply;
+using gfs::ReadChunkRequest;
+using gfs::ReadChunkReply;
+using gfs::WriteChunkRequest;
+using gfs::WriteChunkReply;
+using gfs::GFS;
+using gfs::ErrorCode;
 
-class GreeterClient {
+class GFSClient {
  public:
-  GreeterClient(std::shared_ptr<Channel> channel)
-      : stub_(Greeter::NewStub(channel)) {}
+  GFSClient(std::shared_ptr<Channel> channel)
+      : stub_(GFS::NewStub(channel)) {}
 
   // Assembles the client's payload, sends it and presents the response back
   // from the server.
-  std::string SayHello(const std::string& user) {
+  std::string ClientServerPing(const std::string& user) {
     // Data we are sending to the server.
-    HelloRequest request;
+    PingRequest request;
     request.set_name(user);
 
     // Container for the data we expect from the server.
-    HelloReply reply;
+    PingReply reply;
 
     // Context for the client. It could be used to convey extra information to
     // the server and/or tweak certain RPC behaviors.
     ClientContext context;
 
     // The actual RPC.
-    Status status = stub_->SayHello(&context, request, &reply);
+    Status status = stub_->ClientServerPing(&context, request, &reply);
 
     // Act upon its status.
     if (status.ok()) {
@@ -113,7 +113,7 @@ class GreeterClient {
 
     // Act upon its status.
     if (status.ok()) {
-      std::cout << "Greeter Write Chunk returned: " << reply.error_code() << \
+      std::cout << "Write Chunk returned: " << reply.error_code() << \
                 std::endl;
       return "RPC succeeded";
     } else {
@@ -124,7 +124,7 @@ class GreeterClient {
   }
 
  private:
-  std::unique_ptr<Greeter::Stub> stub_;
+  std::unique_ptr<GFS::Stub> stub_;
 };
 
 int main(int argc, char** argv) {
@@ -132,15 +132,17 @@ int main(int argc, char** argv) {
   // are created. This channel models a connection to an endpoint (in this case,
   // localhost at port 50051). We indicate that the channel isn't authenticated
   // (use of InsecureChannelCredentials()).
-  GreeterClient greeter(grpc::CreateChannel(
+  GFSClient gfs_client(grpc::CreateChannel(
       "127.0.0.1:50051", grpc::InsecureChannelCredentials()));
   std::string user("world");
-  std::string reply = greeter.SayHello(user);
-  std::cout << "Greeter received: " << reply << std::endl;
+  for (int i = 0; i < 1; i++) {
+    std::string reply = gfs_client.ClientServerPing(user);
+    std::cout << "Client received: " << reply << std::endl;
 
-  std::string data = greeter.ReadChunk(10);
-  std::cout << "Greeter received chunk data: " << data << std::endl;
+    std::string data = gfs_client.ReadChunk(10);
+    std::cout << "Client received chunk data: " << data << std::endl;
 
-  std::string rpc_result = greeter.WriteChunk(10, data);
+    std::string rpc_result = gfs_client.WriteChunk(10, data);
+  }
   return 0;
 }

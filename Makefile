@@ -37,12 +37,12 @@ TEMP_PATH = temp
 
 # Actual targets
 
-all: $(BIN_PATH) $(TEMP_PATH) $(BIN_PATH)/greeter_client $(BIN_PATH)/greeter_server
+all: $(BIN_PATH) $(TEMP_PATH) $(BIN_PATH)/gfs_client $(BIN_PATH)/gfs_server
 
-$(BIN_PATH)/greeter_client: $(TEMP_PATH)/helloworld.pb.o $(TEMP_PATH)/helloworld.grpc.pb.o $(TEMP_PATH)/greeter_client.o
+$(BIN_PATH)/gfs_client: $(TEMP_PATH)/gfs.pb.o $(TEMP_PATH)/gfs.grpc.pb.o $(TEMP_PATH)/gfs_client.o
 	$(CXX) $(filter %.o,$^) $(LDFLAGS) -o $@
 
-$(BIN_PATH)/greeter_server: $(TEMP_PATH)/helloworld.pb.o $(TEMP_PATH)/helloworld.grpc.pb.o $(TEMP_PATH)/greeter_server.o
+$(BIN_PATH)/gfs_server: $(TEMP_PATH)/gfs.pb.o $(TEMP_PATH)/gfs.grpc.pb.o $(TEMP_PATH)/gfs_server.o
 	$(CXX) $(filter %.o,$^) $(LDFLAGS) -o $@
 
 # End actual targets
