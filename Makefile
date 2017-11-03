@@ -18,7 +18,7 @@ HOST_SYSTEM = $(shell uname | cut -f 1 -d_)
 SYSTEM ?= $(HOST_SYSTEM)
 CXX = g++
 CPPFLAGS += -Igrpc/include -Igrpc/third_party/protobuf/src -Itemp
-CXXFLAGS += -std=c++11 -O2
+CXXFLAGS += -std=c++11 -O2 -Wall -Werror
 ifeq ($(SYSTEM),Darwin)
 LDFLAGS += -O2 -Lgrpc/libs/opt -Lgrpc/third_party/protobuf/src/.libs -Lgrpc/third_party/zlib \
            -lgrpc++_reflection\
