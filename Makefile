@@ -37,9 +37,12 @@ TEMP_PATH = temp
 
 # Actual targets
 
-all: $(BIN_PATH) $(TEMP_PATH) $(BIN_PATH)/gfs_client $(BIN_PATH)/gfs_server
+all: $(BIN_PATH) $(TEMP_PATH) $(BIN_PATH)/gfs_client $(BIN_PATH)/gfs_master $(BIN_PATH)/gfs_server
 
 $(BIN_PATH)/gfs_client: $(TEMP_PATH)/gfs.pb.o $(TEMP_PATH)/gfs.grpc.pb.o $(TEMP_PATH)/gfs_client.o
+	$(CXX) $(filter %.o,$^) $(LDFLAGS) -o $@
+
+$(BIN_PATH)/gfs_master: $(TEMP_PATH)/gfs.pb.o $(TEMP_PATH)/gfs.grpc.pb.o $(TEMP_PATH)/gfs_master.o $(TEMP_PATH)/sqlite3.o
 	$(CXX) $(filter %.o,$^) $(LDFLAGS) -o $@
 
 $(BIN_PATH)/gfs_server: $(TEMP_PATH)/gfs.pb.o $(TEMP_PATH)/gfs.grpc.pb.o $(TEMP_PATH)/gfs_server.o
@@ -63,6 +66,10 @@ $(TEMP_PATH)/%.grpc.pb.cc: $(SRC_PATH)/%.proto
 .PRECIOUS: $(TEMP_PATH)/%.pb.cc
 $(TEMP_PATH)/%.pb.cc: $(SRC_PATH)/%.proto
 	$(PROTOC) -I $(SRC_PATH) --cpp_out=$(TEMP_PATH) $<
+
+# Special rule for SQLite which is C (not C++)
+$(TEMP_PATH)/sqlite3.o: $(SRC_PATH)/sqlite3.c
+	gcc -c -O2 -o $@ $<
 
 $(TEMP_PATH)/%.o: $(SRC_PATH)/%.cc
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c -o $@ $<
