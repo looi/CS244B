@@ -69,10 +69,10 @@ class GFSClient {
   }
 
   // Client ReadChunk implementation
-  std::string ReadChunk(const int chunk_id) {
+  std::string ReadChunk(const int chunkhandle) {
     // Data we are sending to the server.
     ReadChunkRequest request;
-    request.set_chunk_id(chunk_id);
+    request.set_chunkhandle(chunkhandle);
 
     // Container for the data we expect from the server.
     ReadChunkReply reply;
@@ -86,6 +86,9 @@ class GFSClient {
 
     // Act upon its status.
     if (status.ok()) {
+      if (reply.error_code() == ErrorCode::FAILED) {
+        return "ReadChunk failed";
+      }
       return reply.data();
     } else {
       std::cout << status.error_code() << ": " << status.error_message()
@@ -95,10 +98,10 @@ class GFSClient {
   }
 
   // Client WriteChunk implementation
-  std::string WriteChunk(const int chunk_id, const std::string data) {
+  std::string WriteChunk(const int chunkhandle, const std::string data) {
     // Data we are sending to the server.
     WriteChunkRequest request;
-    request.set_chunk_id(chunk_id);
+    request.set_chunkhandle(chunkhandle);
     request.set_data(data);
 
     // Container for the data we expect from the server.
@@ -135,14 +138,14 @@ int main(int argc, char** argv) {
   GFSClient gfs_client(grpc::CreateChannel(
       "127.0.0.1:50051", grpc::InsecureChannelCredentials()));
   std::string user("world");
-  for (int i = 0; i < 1; i++) {
+  for (int i = 0; i < 10; i++) {
     std::string reply = gfs_client.ClientServerPing(user);
     std::cout << "Client received: " << reply << std::endl;
 
-    std::string data = gfs_client.ReadChunk(10);
+    std::string rpc_result = gfs_client.WriteChunk(i, "new#data" +
+                                                   std::to_string(i));
+    std::string data = gfs_client.ReadChunk(i);
     std::cout << "Client received chunk data: " << data << std::endl;
-
-    std::string rpc_result = gfs_client.WriteChunk(10, data);
   }
   return 0;
 }
