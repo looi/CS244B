@@ -16,6 +16,8 @@
  *
  */
 
+#include "gfs_client.h"
+
 #include <iostream>
 #include <memory>
 #include <string>
@@ -36,100 +38,7 @@ using gfs::WriteChunkReply;
 using gfs::GFS;
 using gfs::ErrorCode;
 
-class GFSClient {
- public:
-  GFSClient(std::shared_ptr<Channel> channel)
-      : stub_(GFS::NewStub(channel)) {}
-
-  // Assembles the client's payload, sends it and presents the response back
-  // from the server.
-  std::string ClientServerPing(const std::string& user) {
-    // Data we are sending to the server.
-    PingRequest request;
-    request.set_name(user);
-
-    // Container for the data we expect from the server.
-    PingReply reply;
-
-    // Context for the client. It could be used to convey extra information to
-    // the server and/or tweak certain RPC behaviors.
-    ClientContext context;
-
-    // The actual RPC.
-    Status status = stub_->ClientServerPing(&context, request, &reply);
-
-    // Act upon its status.
-    if (status.ok()) {
-      return reply.message();
-    } else {
-      std::cout << status.error_code() << ": " << status.error_message()
-                << std::endl;
-      return "RPC failed";
-    }
-  }
-
-  // Client ReadChunk implementation
-  std::string ReadChunk(const int chunkhandle) {
-    // Data we are sending to the server.
-    ReadChunkRequest request;
-    request.set_chunkhandle(chunkhandle);
-
-    // Container for the data we expect from the server.
-    ReadChunkReply reply;
-
-    // Context for the client. It could be used to convey extra information to
-    // the server and/or tweak certain RPC behaviors.
-    ClientContext context;
-
-    // The actual RPC.
-    Status status = stub_->ReadChunk(&context, request, &reply);
-
-    // Act upon its status.
-    if (status.ok()) {
-      if (reply.error_code() == ErrorCode::FAILED) {
-        return "ReadChunk failed";
-      }
-      return reply.data();
-    } else {
-      std::cout << status.error_code() << ": " << status.error_message()
-                << std::endl;
-      return "RPC failed";
-    }
-  }
-
-  // Client WriteChunk implementation
-  std::string WriteChunk(const int chunkhandle, const std::string data) {
-    // Data we are sending to the server.
-    WriteChunkRequest request;
-    request.set_chunkhandle(chunkhandle);
-    request.set_data(data);
-
-    // Container for the data we expect from the server.
-    WriteChunkReply reply;
-
-    // Context for the client. It could be used to convey extra information to
-    // the server and/or tweak certain RPC behaviors.
-    ClientContext context;
-
-    // The actual RPC.
-    Status status = stub_->WriteChunk(&context, request, &reply);
-
-    // Act upon its status.
-    if (status.ok()) {
-      std::cout << "Write Chunk returned: " << reply.error_code() << \
-                std::endl;
-      return "RPC succeeded";
-    } else {
-      std::cout << status.error_code() << ": " << status.error_message()
-                << std::endl;
-      return "RPC failed";
-    }
-  }
-
- private:
-  std::unique_ptr<GFS::Stub> stub_;
-};
-
+// Client's main function
 int main(int argc, char** argv) {
   // Instantiate the client. It requires a channel, out of which the actual RPCs
   // are created. This channel models a connection to an endpoint (in this case,
@@ -148,4 +57,89 @@ int main(int argc, char** argv) {
     std::cout << "Client received chunk data: " << data << std::endl;
   }
   return 0;
+}
+
+//Implimentation of GFSClient class
+GFSClient::GFSClient(std::shared_ptr<Channel> channel)
+    : stub_(GFS::NewStub(channel)) {}
+
+std::string GFSClient::ClientServerPing(const std::string& user) {
+  // Data we are sending to the server.
+  PingRequest request;
+  request.set_name(user);
+
+  // Container for the data we expect from the server.
+  PingReply reply;
+
+  // Context for the client. It could be used to convey extra information to
+  // the server and/or tweak certain RPC behaviors.
+  ClientContext context;
+
+  // The actual RPC.
+  Status status = stub_->ClientServerPing(&context, request, &reply);
+
+  // Act upon its status.
+  if (status.ok()) {
+    return reply.message();
+  } else {
+    std::cout << status.error_code() << ": " << status.error_message()
+              << std::endl;
+    return "RPC failed";
+  }
+}
+
+std::string GFSClient::ReadChunk(const int chunkhandle) {
+  // Data we are sending to the server.
+  ReadChunkRequest request;
+  request.set_chunkhandle(chunkhandle);
+
+  // Container for the data we expect from the server.
+  ReadChunkReply reply;
+
+  // Context for the client. It could be used to convey extra information to
+  // the server and/or tweak certain RPC behaviors.
+  ClientContext context;
+
+  // The actual RPC.
+  Status status = stub_->ReadChunk(&context, request, &reply);
+
+  // Act upon its status.
+  if (status.ok()) {
+    if (reply.error_code() == ErrorCode::FAILED) {
+      return "ReadChunk failed";
+    }
+    return reply.data();
+  } else {
+    std::cout << status.error_code() << ": " << status.error_message()
+              << std::endl;
+    return "RPC failed";
+  }
+}
+
+std::string GFSClient::WriteChunk(const int chunkhandle, const std::string data) {
+  // Data we are sending to the server.
+  WriteChunkRequest request;
+  request.set_chunkhandle(chunkhandle);
+  request.set_data(data);
+
+  // Container for the data we expect from the server.
+  WriteChunkReply reply;
+
+  // Context for the client. It could be used to convey extra information to
+  // the server and/or tweak certain RPC behaviors.
+  ClientContext context;
+
+  // The actual RPC.
+  Status status = stub_->WriteChunk(&context, request, &reply);
+
+  // Act upon its status.
+  if (status.ok()) {
+    std::cout << "Write Chunk returned: " << reply.error_code() << \
+              std::endl;
+    return "RPC succeeded";
+  } else {
+    std::cout << status.error_code() << ": " << status.error_message()
+              << std::endl;
+    return "RPC failed";
+  }
 }
