@@ -18,7 +18,7 @@ HOST_SYSTEM = $(shell uname | cut -f 1 -d_)
 SYSTEM ?= $(HOST_SYSTEM)
 CXX = g++
 CPPFLAGS += -Igrpc/include -Igrpc/third_party/protobuf/src -Itemp
-CXXFLAGS += -std=c++11 -O2
+CXXFLAGS += -std=c++11 -O2 -Wall -Werror
 ifeq ($(SYSTEM),Darwin)
 LDFLAGS += -O2 -Lgrpc/libs/opt -Lgrpc/third_party/protobuf/src/.libs -Lgrpc/third_party/zlib \
            -lgrpc++_reflection\
@@ -37,9 +37,12 @@ TEMP_PATH = temp
 
 # Actual targets
 
-all: $(BIN_PATH) $(TEMP_PATH) $(BIN_PATH)/gfs_client $(BIN_PATH)/gfs_server
+all: $(BIN_PATH) $(TEMP_PATH) $(BIN_PATH)/gfs_client $(BIN_PATH)/gfs_master $(BIN_PATH)/gfs_server
 
 $(BIN_PATH)/gfs_client: $(TEMP_PATH)/gfs.pb.o $(TEMP_PATH)/gfs.grpc.pb.o $(TEMP_PATH)/gfs_client.o
+	$(CXX) $(filter %.o,$^) $(LDFLAGS) -o $@
+
+$(BIN_PATH)/gfs_master: $(TEMP_PATH)/gfs.pb.o $(TEMP_PATH)/gfs.grpc.pb.o $(TEMP_PATH)/gfs_master.o $(TEMP_PATH)/sqlite3.o
 	$(CXX) $(filter %.o,$^) $(LDFLAGS) -o $@
 
 $(BIN_PATH)/gfs_server: $(TEMP_PATH)/gfs.pb.o $(TEMP_PATH)/gfs.grpc.pb.o $(TEMP_PATH)/gfs_server.o
@@ -63,6 +66,10 @@ $(TEMP_PATH)/%.grpc.pb.cc: $(SRC_PATH)/%.proto
 .PRECIOUS: $(TEMP_PATH)/%.pb.cc
 $(TEMP_PATH)/%.pb.cc: $(SRC_PATH)/%.proto
 	$(PROTOC) -I $(SRC_PATH) --cpp_out=$(TEMP_PATH) $<
+
+# Special rule for SQLite which is C (not C++)
+$(TEMP_PATH)/sqlite3.o: $(SRC_PATH)/sqlite3.c
+	gcc -c -O2 -o $@ $<
 
 $(TEMP_PATH)/%.o: $(SRC_PATH)/%.cc
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c -o $@ $<

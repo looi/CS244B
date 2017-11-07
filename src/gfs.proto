@@ -67,3 +67,33 @@ message ReadChunkReply {
 message WriteChunkReply {
   int64 bytes_written = 1;
 }
+
+service GFSMaster {
+  // List all files with filename matching a certain prefix.
+  rpc ListFiles (ListFilesRequest) returns (ListFilesReply) {}
+  // For a given filename and chunk index, returns the chunk handle and locations of replicas.
+  rpc GetChunkhandle (GetChunkhandleRequest) returns (GetChunkhandleReply) {}
+}
+
+message GetChunkhandleRequest {
+  string filename = 1;
+  int64 chunk_index = 2;
+}
+
+message GetChunkhandleReply {
+  int64 chunkhandle = 1;
+  // TODO: list of replicas with the chunkhandle.
+}
+
+message ListFilesRequest {
+  string prefix = 1;
+}
+
+message FileMetadata {
+  string filename = 1;
+  int64 num_chunks = 2; // The master knows the num chunks but probably not the exact size?
+}
+
+message ListFilesReply {
+  repeated FileMetadata files = 1;
+}
