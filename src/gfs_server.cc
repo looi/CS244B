@@ -19,84 +19,86 @@
 #include <iostream>
 #include <fstream>
 #include <memory>
-#include <string>
 #include <inttypes.h>
 
 #include <grpc++/grpc++.h>
 #include "gfs.grpc.pb.h"
-
-using grpc::Server;
-using grpc::ServerBuilder;
-using grpc::ServerContext;
-using grpc::Status;
-using gfs::PingRequest;
-using gfs::PingReply;
-using gfs::ReadChunkRequest;
-using gfs::ReadChunkReply;
-using gfs::WriteChunkRequest;
-using gfs::WriteChunkReply;
-using gfs::GFS;
-using gfs::ErrorCode;
+#include "gfs_server.h"
 
 // Logic and data behind the server's behavior.
-class GFSServiceImpl final : public GFS::Service {
-public:
-  GFSServiceImpl(std::string path) {
-    this->full_path = path;
-  }
+Status GFSServiceImpl::ClientServerPing(ServerContext* context,
+                                        const PingRequest* request,
+                                        PingReply* reply) {
+  std::string prefix("Hello ");
+  reply->set_message(prefix + request->name());
+  return Status::OK;
+}
 
-  Status ClientServerPing(ServerContext* context, const PingRequest* request,
-                          PingReply* reply) override {
-    std::string prefix("Hello ");
-    reply->set_message(prefix + request->name());
+Status GFSServiceImpl::ReadChunk(ServerContext* context,
+                                 const ReadChunkRequest* request,
+                                 ReadChunkReply* reply) {
+  int chunkhandle = request->chunkhandle();
+  int offset = request->offset();
+  int length = request->length();
+  std::string data(length, ' ');
+  std::string filename = this->full_path + "/" + \
+                         std::to_string(chunkhandle);
+
+  if ((length + offset >= CHUNK_SIZE_IN_BYTES)) {
+    std::cout << "Read exceeds chunk size: " << length + offset << std::endl;
+    reply->set_bytes_read(0);
     return Status::OK;
   }
 
-  Status ReadChunk(ServerContext* context, const ReadChunkRequest* request,
-                   ReadChunkReply* reply) override {
-    std::string chunk_data;
-    std::ifstream infile;
-    std::string filename = this->full_path + "/" +
-        std::to_string(request->chunkhandle());
+  std::ifstream infile(filename.c_str(), std::ios::in | std::ios::binary);
+  if (!infile.is_open()) {
+    std::cout << "can't open file for reading: " << filename << std::endl;
+    reply->set_bytes_read(0);
+  } else {
+    infile.seekg(offset, std::ios::beg);
+    infile.read(&data[0], length);
+    reply->set_bytes_read(infile.gcount());
+    infile.close();
+    reply->set_data(data);
+  }
 
-    infile.open(filename.c_str(), std::ios::in);
-    if (!infile) {
-      std::cout << "can't open file for reading: " << filename << std::endl;
-      reply->set_error_code(ErrorCode::FAILED);
-    } else {
-      infile >> chunk_data;
-      infile.close();
-      reply->set_data(chunk_data);
-      reply->set_error_code(ErrorCode::SUCCESS);
-    }
+  return Status::OK;
+}
 
+Status GFSServiceImpl::WriteChunk(ServerContext* context,
+                                  const WriteChunkRequest* request,
+                                  WriteChunkReply* reply) {
+  std::cout << "Got server WriteChunk for chunkhandle = " << \
+            request->chunkhandle() << " and data = " << request->data() << \
+            std::endl;
+  //TODO: acquire a write lock
+  //TODO: data is from in-memory buffer populated during PushData
+
+  int chunkhandle = request->chunkhandle();
+  int offset = request->offset();
+  std::string data = request->data();
+  int length = data.length();
+  std::string filename = this->full_path + "/" + \
+                         std::to_string(chunkhandle);
+
+  if ((length + offset >= CHUNK_SIZE_IN_BYTES)) {
+    std::cout << "Write exceeds chunk size: " << length + offset << std::endl;
+    reply->set_bytes_written(0);
     return Status::OK;
   }
 
-  Status WriteChunk(ServerContext* context, const WriteChunkRequest* request,
-                    WriteChunkReply* reply) override {
-    std::cout << "Got server WriteChunk for chunkhandle = " << \
-              request->chunkhandle() << " and data = " << request->data() << \
-              std::endl;
-
-    std::ofstream outfile;
-    std::string filename = this->full_path + "/" +
-        std::to_string(request->chunkhandle());
-    outfile.open(filename.c_str(), std::ios::out);
-    if (!outfile) {
-      std::cout << "can't open file for writing: " << filename << std::endl;
-      reply->set_error_code(ErrorCode::FAILED);
-    } else {
-      outfile << request->data();
-      outfile.close();
-      reply->set_error_code(ErrorCode::SUCCESS);
-    }
-    return Status::OK;
+  std::ofstream outfile(filename.c_str(), std::ios::out | std::ios::binary);
+  if (!outfile.is_open()) {
+    std::cout << "can't open file for writing: " << filename << std::endl;
+    reply->set_bytes_written(0);
+  } else {
+    outfile.seekp(offset, std::ios::beg);
+    outfile.write(data.c_str(), length);
+    outfile.close();
+    reply->set_bytes_written(length);
   }
-
- private:
-  std::string full_path;
-};
+  return Status::OK;
+}
 
 void RunServer(std::string path) {
   std::string server_address("127.0.0.1:50051");

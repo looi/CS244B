@@ -26,40 +26,50 @@ In one terminal, run `bin/gfs_server <path to local directory>` to get expected 
 
 ```shell
 Server listening on 0.0.0.0:50051
+Got server WriteChunk for chunkhandle = 0 and data = new#data0
+Got server WriteChunk for chunkhandle = 1 and data = new#data1
+Got server WriteChunk for chunkhandle = 2 and data = new#data2
+Got server WriteChunk for chunkhandle = 3 and data = new#data3
+Got server WriteChunk for chunkhandle = 4 and data = new#data4
+Got server WriteChunk for chunkhandle = 5 and data = new#data5
+Got server WriteChunk for chunkhandle = 6 and data = new#data6
+Got server WriteChunk for chunkhandle = 7 and data = new#data7
+Got server WriteChunk for chunkhandle = 8 and data = new#data8
+Got server WriteChunk for chunkhandle = 9 and data = new#data9
 ```
 
 With server running, in another terminal, run `bin/gfs_client` to get expected output:
 
 ```shell
 Client received: Hello world
-Write Chunk returned: 0
+Write Chunk written_bytes = 9
 Client received chunk data: new#data0
 Client received: Hello world
-Write Chunk returned: 0
+Write Chunk written_bytes = 9
 Client received chunk data: new#data1
 Client received: Hello world
-Write Chunk returned: 0
+Write Chunk written_bytes = 9
 Client received chunk data: new#data2
 Client received: Hello world
-Write Chunk returned: 0
+Write Chunk written_bytes = 9
 Client received chunk data: new#data3
 Client received: Hello world
-Write Chunk returned: 0
+Write Chunk written_bytes = 9
 Client received chunk data: new#data4
 Client received: Hello world
-Write Chunk returned: 0
+Write Chunk written_bytes = 9
 Client received chunk data: new#data5
 Client received: Hello world
-Write Chunk returned: 0
+Write Chunk written_bytes = 9
 Client received chunk data: new#data6
 Client received: Hello world
-Write Chunk returned: 0
+Write Chunk written_bytes = 9
 Client received chunk data: new#data7
 Client received: Hello world
-Write Chunk returned: 0
+Write Chunk written_bytes = 9
 Client received chunk data: new#data8
 Client received: Hello world
-Write Chunk returned: 0
+Write Chunk written_bytes = 9
 Client received chunk data: new#data9
 ```
 
