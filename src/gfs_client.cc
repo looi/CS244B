@@ -27,6 +27,10 @@
 using grpc::Channel;
 using grpc::ClientContext;
 using grpc::Status;
+using gfs::GetChunkhandleRequest;
+using gfs::GetChunkhandleReply;
+using gfs::ListFilesRequest;
+using gfs::ListFilesReply;
 using gfs::PingRequest;
 using gfs::PingReply;
 using gfs::ReadChunkRequest;
@@ -34,12 +38,14 @@ using gfs::ReadChunkReply;
 using gfs::WriteChunkRequest;
 using gfs::WriteChunkReply;
 using gfs::GFS;
+using gfs::GFSMaster;
 using gfs::ErrorCode;
 
 class GFSClient {
  public:
-  GFSClient(std::shared_ptr<Channel> channel)
-      : stub_(GFS::NewStub(channel)) {}
+  GFSClient(std::shared_ptr<Channel> channel, std::shared_ptr<Channel> master_channel)
+      : stub_(GFS::NewStub(channel))
+      , stub_master_(GFSMaster::NewStub(master_channel)) {}
 
   // Assembles the client's payload, sends it and presents the response back
   // from the server.
@@ -126,8 +132,45 @@ class GFSClient {
     }
   }
 
+  // Client GetChunkhandle implementation
+  void GetChunkhandle(const std::string& filename, int64_t chunk_id) {
+    GetChunkhandleRequest request;
+    request.set_filename(filename);
+    request.set_chunk_index(chunk_id);
+
+    GetChunkhandleReply reply;
+    ClientContext context;
+    Status status = stub_master_->GetChunkhandle(&context, request, &reply);
+    if (status.ok()) {
+      std::cout << "GetChunkhandle file " << filename << " chunk id " << chunk_id
+                << " got chunkhandle " << reply.chunkhandle() << std::endl;
+    } else {
+      std::cout << status.error_code() << ": " << status.error_message()
+                << std::endl;
+    }
+  }
+
+  // Client ListFiles implementation
+  void ListFiles(const std::string& prefix) {
+    ListFilesRequest request;
+    request.set_prefix("a/a");
+
+    ListFilesReply reply;
+    ClientContext context;
+    Status status = stub_master_->ListFiles(&context, request, &reply);
+    if (status.ok()) {
+      for (const auto& file_metadata : reply.files()) {
+        std::cout << "ListFiles filename " << file_metadata.filename() << std::endl;
+      }
+    } else {
+      std::cout << status.error_code() << ": " << status.error_message()
+                << std::endl;
+    }
+  }
+
  private:
   std::unique_ptr<GFS::Stub> stub_;
+  std::unique_ptr<GFSMaster::Stub> stub_master_;
 };
 
 int main(int argc, char** argv) {
@@ -135,8 +178,9 @@ int main(int argc, char** argv) {
   // are created. This channel models a connection to an endpoint (in this case,
   // localhost at port 50051). We indicate that the channel isn't authenticated
   // (use of InsecureChannelCredentials()).
-  GFSClient gfs_client(grpc::CreateChannel(
-      "127.0.0.1:50051", grpc::InsecureChannelCredentials()));
+  GFSClient gfs_client(
+      grpc::CreateChannel("127.0.0.1:50051", grpc::InsecureChannelCredentials()),
+      grpc::CreateChannel("127.0.0.1:50052", grpc::InsecureChannelCredentials()));
   std::string user("world");
   for (int i = 0; i < 10; i++) {
     std::string reply = gfs_client.ClientServerPing(user);
@@ -147,5 +191,11 @@ int main(int argc, char** argv) {
     std::string data = gfs_client.ReadChunk(i);
     std::cout << "Client received chunk data: " << data << std::endl;
   }
+  gfs_client.GetChunkhandle("a/aa.txt", 0);
+  gfs_client.GetChunkhandle("a/ab.txt", 0);
+  gfs_client.GetChunkhandle("a/aa.txt", 0);
+  gfs_client.GetChunkhandle("a/aa.txt", 1);
+  gfs_client.GetChunkhandle("a/b.txt", 0);
+  gfs_client.ListFiles("a/a");
   return 0;
 }
