@@ -75,10 +75,13 @@ class GFSClient {
   }
 
   // Client ReadChunk implementation
-  std::string ReadChunk(const int chunkhandle) {
+  std::string ReadChunk(const int chunkhandle, const int offset,
+                        const int length) {
     // Data we are sending to the server.
     ReadChunkRequest request;
     request.set_chunkhandle(chunkhandle);
+    request.set_offset(offset);
+    request.set_length(length);
 
     // Container for the data we expect from the server.
     ReadChunkReply reply;
@@ -92,23 +95,23 @@ class GFSClient {
 
     // Act upon its status.
     if (status.ok()) {
-      if (reply.error_code() == ErrorCode::FAILED) {
+      if (reply.bytes_read() == 0) {
         return "ReadChunk failed";
       }
       return reply.data();
     } else {
-      std::cout << status.error_code() << ": " << status.error_message()
-                << std::endl;
       return "RPC failed";
     }
   }
 
   // Client WriteChunk implementation
-  std::string WriteChunk(const int chunkhandle, const std::string data) {
+  std::string WriteChunk(const int chunkhandle, const std::string data,
+                         const int offset) {
     // Data we are sending to the server.
     WriteChunkRequest request;
     request.set_chunkhandle(chunkhandle);
     request.set_data(data);
+    request.set_offset(offset);
 
     // Container for the data we expect from the server.
     WriteChunkReply reply;
@@ -122,12 +125,10 @@ class GFSClient {
 
     // Act upon its status.
     if (status.ok()) {
-      std::cout << "Write Chunk returned: " << reply.error_code() << \
+      std::cout << "Write Chunk written_bytes = " << reply.bytes_written() << \
                 std::endl;
       return "RPC succeeded";
     } else {
-      std::cout << status.error_code() << ": " << status.error_message()
-                << std::endl;
       return "RPC failed";
     }
   }
@@ -183,12 +184,13 @@ int main(int argc, char** argv) {
       grpc::CreateChannel("127.0.0.1:50052", grpc::InsecureChannelCredentials()));
   std::string user("world");
   for (int i = 0; i < 10; i++) {
+    int length;
+    std::string data("new#data" + std::to_string(i));
     std::string reply = gfs_client.ClientServerPing(user);
     std::cout << "Client received: " << reply << std::endl;
 
-    std::string rpc_result = gfs_client.WriteChunk(i, "new#data" +
-                                                   std::to_string(i));
-    std::string data = gfs_client.ReadChunk(i);
+    std::string rpc_result = gfs_client.WriteChunk(i, data, 0);
+    data = gfs_client.ReadChunk(i, 0, data.length());
     std::cout << "Client received chunk data: " << data << std::endl;
   }
   gfs_client.GetChunkhandle("a/aa.txt", 0);

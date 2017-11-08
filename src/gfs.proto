@@ -21,12 +21,6 @@ option objc_class_prefix = "HLW";
 
 package gfs;
 
-// This is probably unnecessary because of grpc::StatusCode.
-enum ErrorCode {
-  SUCCESS = 0;
-  FAILED = 1;
-}
-
 // The GFS service definition.
 service GFS {
   // Read data
@@ -50,25 +44,28 @@ message PingReply {
 // Read Chunk Request
 message ReadChunkRequest {
   int64 chunkhandle = 1;
+  int64 offset = 2;
+  int64 length = 3;
 }
 
 // Write Chunk Request
 message WriteChunkRequest {
   int64 chunkhandle = 1;
   string data = 2;
+  int64 offset = 3;
 // TODO: hash of the data
 }
 
 // Read Chunk Reply
 message ReadChunkReply {
   string data = 1;
-  ErrorCode error_code = 2;
+  int64 bytes_read = 2;
 // TODO: hash of the data
 }
 
 // Write Chunk Reply
 message WriteChunkReply {
-  ErrorCode error_code = 1;
+  int64 bytes_written = 1;
 }
 
 service GFSMaster {
