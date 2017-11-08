@@ -36,7 +36,7 @@ class GFSClient {
   bool Write(char *buf, const std::string& filename, const int offset);
   
   // Appends the byte array to a file. Returns the off-set that the content resides in.
-  int Append(har *buf, const std::string& filename);
+  int Append(char *buf, const std::string& filename);
 
 private:
   // Client ReadChunk implementation
