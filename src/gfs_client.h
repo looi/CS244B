@@ -65,3 +65,4 @@ private:
   std::unique_ptr<gfs::GFS::Stub> stub_;
   std::unique_ptr<gfs::GFSMaster::Stub> stub_master_;
 };
+
