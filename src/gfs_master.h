@@ -16,7 +16,6 @@ using gfs::GetChunkhandleReply;
 using gfs::GFSMaster;
 using gfs::ListFilesRequest;
 using gfs::ListFilesReply;
-using gfs::ErrorCode;
 
 // Logic and data behind the server's behavior.
 class GFSMasterImpl final : public GFSMaster::Service {
