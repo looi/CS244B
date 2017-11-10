@@ -8,7 +8,12 @@
 
 class GFSClient {
  public:
-  GFSClient(std::shared_ptr<grpc::Channel> channel);
+  GFSClient(std::shared_ptr<grpc::Channel> channel,
+            std::shared_ptr<grpc::Channel> master_channel)
+    : stub_(gfs::GFS::NewStub(channel))
+    , stub_master_(gfs::GFSMaster::NewStub(master_channel)) {}
+
+  //Client API fucntions
 
   // Assembles the client's payload, sends it and presents the response back
   // from the server.
@@ -29,21 +34,34 @@ class GFSClient {
 
   // Fills the byte array with contents with off-set in the file. Returns the 
   // number of bytes it reads.
-  int Read(char *buf, const std::string& filename, onst int offset);
+  int Read(char *buf, const std::string& filename, const int offset);
 
   // Writes the byte array content to the file with an off-set. Returns the
   // number of bytes it reads.
-  bool Write(char *buf, const std::string& filename, onst int offset);
+  bool Write(char *buf, const std::string& filename, const int offset);
   
   // Appends the byte array to a file. Returns the off-set that the content resides in.
-  int Append(har *buf, const std::string& filename);
+  int Append(char *buf, const std::string& filename);
 
-private:
+
+
+  // Helper funtions (TODO: might need to move to private)
+
   // Client ReadChunk implementation
-  std::string ReadChunk(const int chunkhandle);
+  std::string ReadChunk(const int chunkhandle, const int offset,
+                        const int length);
 
   // Client WriteChunk implementation
-  std::string WriteChunk(const int chunkhandle, const std::string data);
+  std::string WriteChunk(const int chunkhandle, const std::string data,
+                         const int offset);
 
+  // Get chunkhandle of a file, create a chunk if the file is not found
+  void GetChunkhandle(const std::string& filename, int64_t chunk_id);
+
+  // Print all the file as for now
+  void ListFiles(const std::string& prefix);
+
+private:
   std::unique_ptr<gfs::GFS::Stub> stub_;
+  std::unique_ptr<gfs::GFSMaster::Stub> stub_master_;
 };
