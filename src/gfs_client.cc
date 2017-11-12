@@ -173,7 +173,7 @@ void GFSClient::FindLeaseHolder(const std::string& filename, int64_t chunk_id) {
 
 void GFSClient::FindMatchingFiles(const std::string& prefix) {
   FindMatchingFilesRequest request;
-  request.set_prefix("a/a");
+  request.set_prefix(prefix);
 
   FindMatchingFilesReply reply;
   ClientContext context;
