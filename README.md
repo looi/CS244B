@@ -80,11 +80,11 @@ Client received chunk data: new#data8
 Client received: Hello world
 Write Chunk written_bytes = 9
 Client received chunk data: new#data9
-FindLocations file a/aa.txt chunk id 0 got chunkhandle 1
-FindLocations file a/ab.txt chunk id 0 got chunkhandle 2
-FindLocations file a/aa.txt chunk id 0 got chunkhandle 1
-FindLocations file a/aa.txt chunk id 1 got chunkhandle 3
-FindLocations file a/b.txt chunk id 0 got chunkhandle 4
+FindLeaseHolder file a/aa.txt chunk id 0 got chunkhandle 1
+FindLeaseHolder file a/ab.txt chunk id 0 got chunkhandle 2
+FindLeaseHolder file a/aa.txt chunk id 0 got chunkhandle 1
+FindLeaseHolder file a/aa.txt chunk id 1 got chunkhandle 3
+FindLeaseHolder file a/b.txt chunk id 0 got chunkhandle 4
 FindMatchingFiles filename a/aa.txt
 FindMatchingFiles filename a/ab.txt
 ```

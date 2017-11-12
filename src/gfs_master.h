@@ -11,8 +11,8 @@ using grpc::Server;
 using grpc::ServerBuilder;
 using grpc::ServerContext;
 using grpc::Status;
-using gfs::FindLocationsRequest;
-using gfs::FindLocationsReply;
+using gfs::FindLeaseHolderRequest;
+using gfs::FindLeaseHolderReply;
 using gfs::GFSMaster;
 using gfs::FindMatchingFilesRequest;
 using gfs::FindMatchingFilesReply;
@@ -22,9 +22,9 @@ class GFSMasterImpl final : public GFSMaster::Service {
  public:
   GFSMasterImpl(std::string sqlite_db_path);
   ~GFSMasterImpl();
-  Status FindLocations(ServerContext* context,
-                       const FindLocationsRequest* request,
-                       FindLocationsReply* reply) override;
+  Status FindLeaseHolder(ServerContext* context,
+                         const FindLeaseHolderRequest* request,
+                         FindLeaseHolderReply* reply) override;
   Status FindMatchingFiles(ServerContext* context,
                            const FindMatchingFilesRequest* request,
                            FindMatchingFilesReply* reply) override;

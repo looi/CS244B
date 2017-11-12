@@ -56,7 +56,7 @@ class GFSClient {
                          const int offset);
 
   // Get chunkhandle of a file, create a chunk if the file is not found
-  void FindLocations(const std::string& filename, int64_t chunk_id);
+  void FindLeaseHolder(const std::string& filename, int64_t chunk_id);
 
   // Print all the file as for now
   void FindMatchingFiles(const std::string& prefix);

@@ -32,9 +32,9 @@ GFSMasterImpl::~GFSMasterImpl() {
   sqlite3_close(db_);
 }
 
-Status GFSMasterImpl::FindLocations(ServerContext* context,
-                                    const FindLocationsRequest* request,
-                                    FindLocationsReply* reply) {
+Status GFSMasterImpl::FindLeaseHolder(ServerContext* context,
+                                      const FindLeaseHolderRequest* request,
+                                      FindLeaseHolderReply* reply) {
   const std::string& filename = request->filename();
   const int64_t chunk_index = request->chunk_index();
 

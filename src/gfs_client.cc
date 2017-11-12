@@ -29,8 +29,8 @@
 using grpc::Channel;
 using grpc::ClientContext;
 using grpc::Status;
-using gfs::FindLocationsRequest;
-using gfs::FindLocationsReply;
+using gfs::FindLeaseHolderRequest;
+using gfs::FindLeaseHolderReply;
 using gfs::FindMatchingFilesRequest;
 using gfs::FindMatchingFilesReply;
 using gfs::PingRequest;
@@ -62,11 +62,11 @@ int main(int argc, char** argv) {
     data = gfs_client.ReadChunk(i, 0, data.length());
     std::cout << "Client received chunk data: " << data << std::endl;
   }
-  gfs_client.FindLocations("a/aa.txt", 0);
-  gfs_client.FindLocations("a/ab.txt", 0);
-  gfs_client.FindLocations("a/aa.txt", 0);
-  gfs_client.FindLocations("a/aa.txt", 1);
-  gfs_client.FindLocations("a/b.txt", 0);
+  gfs_client.FindLeaseHolder("a/aa.txt", 0);
+  gfs_client.FindLeaseHolder("a/ab.txt", 0);
+  gfs_client.FindLeaseHolder("a/aa.txt", 0);
+  gfs_client.FindLeaseHolder("a/aa.txt", 1);
+  gfs_client.FindLeaseHolder("a/b.txt", 0);
   gfs_client.FindMatchingFiles("a/a");
   return 0;
 }
@@ -154,16 +154,16 @@ std::string GFSClient::WriteChunk(const int chunkhandle, const std::string data,
   }
 }
 
-void GFSClient::FindLocations(const std::string& filename, int64_t chunk_id) {
-  FindLocationsRequest request;
+void GFSClient::FindLeaseHolder(const std::string& filename, int64_t chunk_id) {
+  FindLeaseHolderRequest request;
   request.set_filename(filename);
   request.set_chunk_index(chunk_id);
 
-  FindLocationsReply reply;
+  FindLeaseHolderReply reply;
   ClientContext context;
-  Status status = stub_master_->FindLocations(&context, request, &reply);
+  Status status = stub_master_->FindLeaseHolder(&context, request, &reply);
   if (status.ok()) {
-    std::cout << "FindLocations file " << filename << " chunk id " << chunk_id
+    std::cout << "FindLeaseHolder file " << filename << " chunk id " << chunk_id
               << " got chunkhandle " << reply.chunkhandle() << std::endl;
   } else {
     std::cout << status.error_code() << ": " << status.error_message()
