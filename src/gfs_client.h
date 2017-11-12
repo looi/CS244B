@@ -56,12 +56,13 @@ class GFSClient {
                          const int offset);
 
   // Get chunkhandle of a file, create a chunk if the file is not found
-  void GetChunkhandle(const std::string& filename, int64_t chunk_id);
+  void FindLocations(const std::string& filename, int64_t chunk_id);
 
   // Print all the file as for now
-  void ListFiles(const std::string& prefix);
+  void FindMatchingFiles(const std::string& prefix);
 
 private:
+  // TODO: This stub_ needs to be replaced by one stub per chunkserver.
   std::unique_ptr<gfs::GFS::Stub> stub_;
   std::unique_ptr<gfs::GFSMaster::Stub> stub_master_;
 };

@@ -11,23 +11,23 @@ using grpc::Server;
 using grpc::ServerBuilder;
 using grpc::ServerContext;
 using grpc::Status;
-using gfs::GetChunkhandleRequest;
-using gfs::GetChunkhandleReply;
+using gfs::FindLocationsRequest;
+using gfs::FindLocationsReply;
 using gfs::GFSMaster;
-using gfs::ListFilesRequest;
-using gfs::ListFilesReply;
+using gfs::FindMatchingFilesRequest;
+using gfs::FindMatchingFilesReply;
 
 // Logic and data behind the server's behavior.
 class GFSMasterImpl final : public GFSMaster::Service {
  public:
   GFSMasterImpl(std::string sqlite_db_path);
   ~GFSMasterImpl();
-  Status GetChunkhandle(ServerContext* context,
-		                const GetChunkhandleRequest* request,
-                        GetChunkhandleReply* reply) override;
-  Status ListFiles(ServerContext* context,
-		           const ListFilesRequest* request,
-                   ListFilesReply* reply) override;
+  Status FindLocations(ServerContext* context,
+                       const FindLocationsRequest* request,
+                       FindLocationsReply* reply) override;
+  Status FindMatchingFiles(ServerContext* context,
+                           const FindMatchingFilesRequest* request,
+                           FindMatchingFilesReply* reply) override;
 
  private:
   void ThrowIfSqliteFailed(int rc);
