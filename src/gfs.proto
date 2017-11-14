@@ -81,9 +81,9 @@ message DeleteChunksReply {}
 service GFSMaster {
   // Client -> Master RPCs
   // ---------------------
-  // - Directories are part of the filename, e.g. "abc/def/ghi.txt"
-  
+    
   // List all files with filename matching a certain prefix.
+  // - Directories are part of the filename, e.g. "abc/def/ghi.txt"
   rpc FindMatchingFiles (FindMatchingFilesRequest) returns (FindMatchingFilesReply) {}
 
   // For a given filename and chunk index, returns the chunk handle and locations of replicas.
