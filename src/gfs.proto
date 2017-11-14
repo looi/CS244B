@@ -71,18 +71,22 @@ message WriteChunkReply {
 service GFSMaster {
   // List all files with filename matching a certain prefix.
   rpc ListFiles (ListFilesRequest) returns (ListFilesReply) {}
+  
   // For a given filename and chunk index, returns the chunk handle and locations of replicas.
   rpc GetChunkhandle (GetChunkhandleRequest) returns (GetChunkhandleReply) {}
-}
 
-message GetChunkhandleRequest {
-  string filename = 1;
-  int64 chunk_index = 2;
-}
+  // For a given filename and chunk index, returns the locations of chunk servers.
+  rpc FindLocations (FindLocationsRequest) return (FindLocationsReply) {}
 
-message GetChunkhandleReply {
-  int64 chunkhandle = 1;
-  // TODO: list of replicas with the chunkhandle.
+  // For a given filename and chunk index, returns the locations of current lease holder.
+  rpc FindLeaseHolder (FindLeaseHolderRequest) return (FindLeaseHolderReply) {}
+
+  // For a given filename and chunk index, allocate chunk servers, returns the chunk handle and
+  // locations of replicas.
+  rpc AddChunk (AddChunkRequest) return (AddChunkReply) {}
+
+  // For a given filename, returns the length of the file.
+  rpc GetFileLength (GetFileLengthRequest) return (GetFileLengthReply) {}
 }
 
 message ListFilesRequest {
@@ -96,4 +100,50 @@ message FileMetadata {
 
 message ListFilesReply {
   repeated FileMetadata files = 1;
+}
+
+message FileInfo {
+  string filename = 1;
+  int64 chunk_index = 2;
+}
+
+message GetChunkhandleRequest {
+  required FileInfo file = 1;
+}
+
+message GetChunkhandleReply {
+  int64 chunkhandle = 1;
+  // TODO: list of replicas with the chunkhandle.
+}
+
+message FindLocationsRequest {
+  required FileInfo file = 1;
+}
+
+message FindLocationsReply {
+  // TODO: A good way to represent list of chunk locations.
+}
+
+message FindLeaseHolderRequest {
+  required FileInfo file = 1;
+}
+
+message FindLeaseHolderReply {
+  // TODO: A good way to represent chunk location.
+}
+
+message AddChunkRequest {
+  required FileInfo file = 1;
+}
+
+message AddChunkReply {
+  GetChunkhandleReply chunk_handle = 1;
+}
+
+message GetFileLengthRequest {
+  string filename = 1;
+}
+
+message GetFileLengthReply {
+  int64 filen_length = 1;
 }

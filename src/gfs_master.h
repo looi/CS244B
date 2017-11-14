@@ -23,10 +23,10 @@ class GFSMasterImpl final : public GFSMaster::Service {
   GFSMasterImpl(std::string sqlite_db_path);
   ~GFSMasterImpl();
   Status GetChunkhandle(ServerContext* context,
-		                const GetChunkhandleRequest* request,
+		                    const GetChunkhandleRequest* request,
                         GetChunkhandleReply* reply) override;
   Status ListFiles(ServerContext* context,
-		           const ListFilesRequest* request,
+		               const ListFilesRequest* request,
                    ListFilesReply* reply) override;
 
  private:
