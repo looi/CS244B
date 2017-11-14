@@ -29,6 +29,7 @@ class GFSMasterImpl final : public GFSMaster::Service {
                            const FindMatchingFilesRequest* request,
                            FindMatchingFilesReply* reply) override;
 
+
  private:
   void ThrowIfSqliteFailed(int rc);
 

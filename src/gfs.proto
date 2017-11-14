@@ -81,7 +81,7 @@ message DeleteChunksReply {}
 service GFSMaster {
   // Client -> Master RPCs
   // ---------------------
-
+    
   // List all files with filename matching a certain prefix.
   // - Directories are part of the filename, e.g. "abc/def/ghi.txt"
   rpc FindMatchingFiles (FindMatchingFilesRequest) returns (FindMatchingFilesReply) {}
@@ -103,6 +103,13 @@ service GFSMaster {
 
   // Requests master to delete file.
   rpc DeleteFile (DeleteFileRequest) returns (DeleteFileReply) {}
+
+  // For a given filename and chunk index, allocate chunk servers, returns the chunk handle and
+  // locations of replicas.
+  rpc AddChunk (AddChunkRequest) return (AddChunkReply) {}
+
+  // For a given filename, returns the length of the file.
+  rpc GetFileLength (GetFileLengthRequest) return (GetFileLengthReply) {}
 
   // Chunkserver -> Master RPCs
   // --------------------------
@@ -172,6 +179,23 @@ message DeleteFileRequest {
 
 // Status returned may be OK or NOT_FOUND (or a network error).
 message DeleteFileReply {}
+
+message AddChunkRequest {
+  string filename = 1;
+  int64 chunk_index = 2;
+}
+
+message AddChunkReply {
+  // TODO: define the reply
+}
+
+message GetFileLengthRequest {
+  string filename = 1;
+}
+
+message GetFileLengthReply {
+  int64 filen_length = 1;
+}
 
 message HeartbeatRequest {
   message ChunkInfo {
