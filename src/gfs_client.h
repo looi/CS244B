@@ -9,9 +9,11 @@
 class GFSClient {
  public:
   GFSClient(std::shared_ptr<grpc::Channel> channel,
-            std::shared_ptr<grpc::Channel> master_channel)
+            std::shared_ptr<grpc::Channel> master_channel,
+            int client_id)
     : stub_(gfs::GFS::NewStub(channel))
-    , stub_master_(gfs::GFSMaster::NewStub(master_channel)) {}
+    , stub_master_(gfs::GFSMaster::NewStub(master_channel))
+    , client_id_(client_id) {}
 
   //Client API fucntions
 
@@ -32,18 +34,16 @@ class GFSClient {
   // succeeded.
   bool Delete(const std::string& path);
 
-  // Fills the byte array with contents with off-set in the file. Returns the 
+  // Fills the byte array with contents with off-set in the file. Returns the
   // number of bytes it reads.
   int Read(char *buf, const std::string& filename, const int offset);
 
   // Writes the byte array content to the file with an off-set. Returns the
   // number of bytes it reads.
   bool Write(char *buf, const std::string& filename, const int offset);
-  
+
   // Appends the byte array to a file. Returns the off-set that the content resides in.
   int Append(char *buf, const std::string& filename);
-
-
 
   // Helper funtions (TODO: might need to move to private)
 
@@ -55,6 +55,13 @@ class GFSClient {
   std::string WriteChunk(const int chunkhandle, const std::string data,
                          const int offset);
 
+  bool PushData(std::unique_ptr<gfs::GFS::Stub> &stub, const std::string data,
+                                const struct timeval timstamp);
+
+  bool SendWriteToChunkServer(std::unique_ptr<gfs::GFS::Stub> &stub,
+                              const int chunkhandle, const int offset,
+                              const struct timeval timstamp);
+
   // Get chunkhandle of a file, create a chunk if the file is not found
   void GetChunkhandle(const std::string& filename, int64_t chunk_id);
 
@@ -64,5 +71,5 @@ class GFSClient {
 private:
   std::unique_ptr<gfs::GFS::Stub> stub_;
   std::unique_ptr<gfs::GFSMaster::Stub> stub_master_;
+  int client_id_;
 };
-

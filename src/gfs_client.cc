@@ -22,9 +22,12 @@
 #include <memory>
 #include <string>
 #include <inttypes.h>
+#include <sys/time.h>
+#include <time.h>
 
 #include <grpc++/grpc++.h>
 #include "gfs.grpc.pb.h"
+#include <google/protobuf/timestamp.pb.h>
 
 using grpc::Channel;
 using grpc::ClientContext;
@@ -39,8 +42,11 @@ using gfs::ReadChunkRequest;
 using gfs::ReadChunkReply;
 using gfs::WriteChunkRequest;
 using gfs::WriteChunkReply;
+using gfs::PushDataRequest;
+using gfs::PushDataReply;
 using gfs::GFS;
 using gfs::GFSMaster;
+using google::protobuf::Timestamp;
 
 // Client's main function
 int main(int argc, char** argv) {
@@ -50,7 +56,8 @@ int main(int argc, char** argv) {
   // (use of InsecureChannelCredentials()).
   GFSClient gfs_client(
       grpc::CreateChannel("127.0.0.1:50051", grpc::InsecureChannelCredentials()),
-      grpc::CreateChannel("127.0.0.1:50052", grpc::InsecureChannelCredentials()));
+      grpc::CreateChannel("127.0.0.1:50052", grpc::InsecureChannelCredentials()),
+      42); // TODO: chose a better client_id
   std::string user("world");
   for (int i = 0; i < 10; i++) {
     // int length;
@@ -125,46 +132,99 @@ std::string GFSClient::ReadChunk(const int chunkhandle, const int offset,
   }
 }
 
-
+// Client wants to write a chunk at a particular offset. We already have the
+// chunkhandle by contacting the master; This function will:
+//  Create a Timestamp
+//  Call PushData to all the ChunkServers
+//  Call WriteChunk to the Primary ChunkServer (will contain list of secondary
+//  ChunkServers)
+//  TODO: logic to create connections to ChunkServers based on locations
 std::string GFSClient::WriteChunk(const int chunkhandle, const std::string data,
-                                const int offset) {
-  // Data we are sending to the server.
-  WriteChunkRequest request;
-  request.set_chunkhandle(chunkhandle);
-  request.set_data(data);
-  request.set_offset(offset);
+                                  const int offset) {
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
 
-  // Container for the data we expect from the server.
-  WriteChunkReply reply;
+  if (!PushData(stub_, data, tv)) {
+    std::cout << "PushData succeeded for data = " << data << std::endl;
+  } else {
+    return "PushData RPC failed";
+  }
 
-  // Context for the client. It could be used to convey extra information to
-  // the server and/or tweak certain RPC behaviors.
-  ClientContext context;
-
-  // The actual RPC.
-  Status status = stub_->WriteChunk(&context, request, &reply);
-
-  // Act upon its status.
-  if (status.ok()) {
-    std::cout << "Write Chunk written_bytes = " << reply.bytes_written() << \
-              std::endl;
+  if (!SendWriteToChunkServer(stub_, chunkhandle, offset, tv)) {
     return "RPC succeeded";
   } else {
-    return "RPC failed";
+    return "Write RPC failed";
   }
 }
 
-void GFSClient::GetChunkhandle(const std::string& filename, int64_t chunk_id) {
+bool GFSClient::PushData(std::unique_ptr<gfs::GFS::Stub> &stub,
+                                const std::string data,
+                                const struct timeval tv) {
+  PushDataRequest request;
+  PushDataReply reply;
+  ClientContext context;
+
+  Timestamp timestamp;
+  timestamp.set_seconds(tv.tv_sec);
+  timestamp.set_nanos(tv.tv_usec * 1000);
+
+  request.set_allocated_timestamp(&timestamp);
+  request.set_data(data);
+  request.set_client_id(client_id_);
+
+  Status status = stub->PushData(&context, request, &reply);
+  request.release_timestamp();
+
+  if (status.ok()) {
+    std::cout << "PushData succeeded for data = " << data << std::endl;
+    return true;
+  } else {
+    std::cout << "PushData failed for data = " << data << std::endl;
+    return false;
+  }
+}
+
+bool GFSClient::SendWriteToChunkServer(std::unique_ptr<gfs::GFS::Stub> &stub,
+                      const int chunkhandle, const int offset,
+                      const struct timeval tv) {
+  WriteChunkRequest request;
+  WriteChunkReply reply;
+  ClientContext context;
+
+  Timestamp timestamp;
+  timestamp.set_seconds(tv.tv_sec);
+  timestamp.set_nanos(tv.tv_usec * 1000);
+
+  request.set_allocated_timestamp(&timestamp);
+  request.set_client_id(client_id_);
+  request.set_allocated_timestamp(&timestamp);
+  request.set_chunkhandle(chunkhandle);
+  request.set_offset(offset);
+
+  Status status = stub->WriteChunk(&context, request, &reply);
+  request.release_timestamp();
+
+  if (status.ok()) {
+    std::cout << "Write Chunk written_bytes = " << reply.bytes_written() << \
+              std::endl;
+    return true;
+  } else {
+    return false;
+  }
+}
+
+void GFSClient::GetChunkhandle(const std::string& filename, int64_t chunk_index) {
   GetChunkhandleRequest request;
   request.set_filename(filename);
-  request.set_chunk_index(chunk_id);
+  request.set_chunk_index(chunk_index);
 
   GetChunkhandleReply reply;
   ClientContext context;
   Status status = stub_master_->GetChunkhandle(&context, request, &reply);
   if (status.ok()) {
-    std::cout << "GetChunkhandle file " << filename << " chunk id " << chunk_id
-              << " got chunkhandle " << reply.chunkhandle() << std::endl;
+    std::cout << "GetChunkhandle file " << filename << " chunk index " <<
+              chunk_index << " got chunkhandle " << reply.chunkhandle() <<
+              std::endl;
   } else {
     std::cout << status.error_code() << ": " << status.error_message()
               << std::endl;

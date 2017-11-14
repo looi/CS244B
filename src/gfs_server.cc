@@ -22,8 +22,11 @@
 #include <inttypes.h>
 
 #include <grpc++/grpc++.h>
+#include <google/protobuf/timestamp.pb.h>
 #include "gfs.grpc.pb.h"
 #include "gfs_server.h"
+
+using google::protobuf::Timestamp;
 
 // Logic and data behind the server's behavior.
 Status GFSServiceImpl::ClientServerPing(ServerContext* context,
@@ -68,15 +71,26 @@ Status GFSServiceImpl::ReadChunk(ServerContext* context,
 Status GFSServiceImpl::WriteChunk(ServerContext* context,
                                   const WriteChunkRequest* request,
                                   WriteChunkReply* reply) {
-  std::cout << "Got server WriteChunk for chunkhandle = " << \
-            request->chunkhandle() << " and data = " << request->data() << \
-            std::endl;
-  //TODO: acquire a write lock
-  //TODO: data is from in-memory buffer populated during PushData
-
+  ChunkId chunk_id;
+  chunk_id.client_id = request->client_id();
+  Timestamp ts = request->timestamp();
+  chunk_id.timestamp.tv_sec = ts.seconds();
+  chunk_id.timestamp.tv_usec = ts.nanos()/1000;
   int chunkhandle = request->chunkhandle();
   int offset = request->offset();
-  std::string data = request->data();
+
+  std::cout << "Got server WriteChunk for chunkhandle = " << \
+            request->chunkhandle() << std::endl;
+
+  std::lock_guard<std::mutex> guard(buffercache_mutex);
+
+  if (buffercache.find(chunk_id) == buffercache.end()) {
+    std::cout << "Chunk data doesn't exists in buffercache" << std::endl;
+    reply->set_bytes_written(0);
+    return Status::OK;
+  }
+
+  std::string data = buffercache[chunk_id];
   int length = data.length();
   std::string filename = this->full_path + "/" + \
                          std::to_string(chunkhandle);
@@ -96,7 +110,33 @@ Status GFSServiceImpl::WriteChunk(ServerContext* context,
     outfile.write(data.c_str(), length);
     outfile.close();
     reply->set_bytes_written(length);
+
+    // Write succeeded, so we can remove the buffercache entry
+    buffercache.erase(chunk_id);
   }
+  return Status::OK;
+}
+
+Status GFSServiceImpl::PushData(ServerContext* context,
+                                  const PushDataRequest* request,
+                                  PushDataReply* reply) {
+  ChunkId chunk_id;
+  chunk_id.client_id = request->client_id();
+  Timestamp ts = request->timestamp();
+  chunk_id.timestamp.tv_sec = ts.seconds();
+  chunk_id.timestamp.tv_usec = ts.nanos()/1000;
+  std::string data = request->data();
+
+  std::cout << "Got server PushData for clientid = " << \
+            chunk_id.client_id << " and data = " << data << std::endl;
+
+  std::lock_guard<std::mutex> guard(buffercache_mutex);
+
+  if (buffercache.find(chunk_id) != buffercache.end()) {
+    std::cout << "Chunk data already exists" << std::endl;
+  }
+
+  buffercache[chunk_id] = data;
   return Status::OK;
 }
 

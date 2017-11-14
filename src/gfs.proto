@@ -18,6 +18,7 @@ option java_multiple_files = true;
 option java_package = "io.grpc.examples.helloworld";
 option java_outer_classname = "HelloWorldProto";
 option objc_class_prefix = "HLW";
+import "google/protobuf/timestamp.proto";
 
 package gfs;
 
@@ -27,6 +28,8 @@ service GFS {
   rpc ReadChunk (ReadChunkRequest) returns (ReadChunkReply) {}
   // Write data
   rpc WriteChunk (WriteChunkRequest) returns (WriteChunkReply) {}
+  // Write data
+  rpc PushData (PushDataRequest) returns (PushDataReply) {}
   // Sends a ping
   rpc ClientServerPing (PingRequest) returns (PingReply) {}
 }
@@ -50,9 +53,10 @@ message ReadChunkRequest {
 
 // Write Chunk Request
 message WriteChunkRequest {
-  int64 chunkhandle = 1;
-  string data = 2;
-  int64 offset = 3;
+  int64 client_id = 1;
+  google.protobuf.Timestamp timestamp = 2;
+  int64 chunkhandle = 3;
+  int64 offset = 4;
 // TODO: hash of the data
 }
 
@@ -66,6 +70,17 @@ message ReadChunkReply {
 // Write Chunk Reply
 message WriteChunkReply {
   int64 bytes_written = 1;
+}
+
+// PushData Request
+message PushDataRequest {
+  int64 client_id = 1;
+  google.protobuf.Timestamp timestamp = 2;
+  string data = 3;
+}
+
+// PushData Reply
+message PushDataReply {
 }
 
 service GFSMaster {
