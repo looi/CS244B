@@ -32,9 +32,9 @@ GFSMasterImpl::~GFSMasterImpl() {
   sqlite3_close(db_);
 }
 
-Status GFSMasterImpl::GetChunkhandle(ServerContext* context,
-                                     const GetChunkhandleRequest* request,
-                                     GetChunkhandleReply* reply) {
+Status GFSMasterImpl::FindLeaseHolder(ServerContext* context,
+                                      const FindLeaseHolderRequest* request,
+                                      FindLeaseHolderReply* reply) {
   const std::string& filename = request->filename();
   const int64_t chunk_index = request->chunk_index();
 
@@ -84,9 +84,9 @@ Status GFSMasterImpl::GetChunkhandle(ServerContext* context,
   return Status::OK;
 }
 
-Status GFSMasterImpl::ListFiles(ServerContext* context,
-                                const ListFilesRequest* request,
-                                ListFilesReply* reply) {
+Status GFSMasterImpl::FindMatchingFiles(ServerContext* context,
+                                        const FindMatchingFilesRequest* request,
+                                        FindMatchingFilesReply* reply) {
   std::string like_query = request->prefix() + "%";
 
   // Get file list from sqlite.
