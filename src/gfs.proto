@@ -144,6 +144,7 @@ message FindLocationsRequest {
   int64 chunk_index = 2;
 }
 
+// Status returned may be OK or NOT_FOUND (or a network error).
 message FindLocationsReply {
   int64 chunkhandle = 1;
   // Each location is a string "IP:port" like "127.0.0.1:12345".
