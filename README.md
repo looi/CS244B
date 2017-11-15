@@ -22,7 +22,15 @@ cd ../../..                 # back to CS244B root folder
 make                        # builds CS244B project
 ```
 
-In one terminal, run `bin/gfs_server <path to local directory>` to get expected output:
+#### Run master
+In one terminal, run `bin/gfs_master <path to sqlite database>` to get expected output:
+
+```shell
+Server listening on 0.0.0.0:50052
+```
+
+#### Run chunkserver
+In another terminal, run `bin/gfs_server <path to local directory>` to get expected output:
 
 ```shell
 Server listening on 0.0.0.0:50051
@@ -38,6 +46,7 @@ Got server WriteChunk for chunkhandle = 8 and data = new#data8
 Got server WriteChunk for chunkhandle = 9 and data = new#data9
 ```
 
+#### Run client
 With server running, in another terminal, run `bin/gfs_client` to get expected output:
 
 ```shell
@@ -71,6 +80,14 @@ Client received chunk data: new#data8
 Client received: Hello world
 Write Chunk written_bytes = 9
 Client received chunk data: new#data9
+FindLeaseHolder file a/aa.txt chunk id 0 got chunkhandle 1
+FindLeaseHolder file a/ab.txt chunk id 0 got chunkhandle 2
+FindLeaseHolder file a/aa.txt chunk id 0 got chunkhandle 1
+FindLeaseHolder file a/aa.txt chunk id 1 got chunkhandle 3
+FindLeaseHolder file a/b.txt chunk id 0 got chunkhandle 4
+FindMatchingFiles filename a/aa.txt
+FindMatchingFiles filename a/ab.txt
 ```
 
-The local directory should also contain the 10 files with the data the client provided.
+* The local directory should also contain the 10 files with the data the client provided.
+* The master's sqlite database should also contain the added files.
