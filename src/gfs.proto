@@ -17,13 +17,12 @@ service GFS {
   rpc ReadChunk (ReadChunkRequest) returns (ReadChunkReply) {}
   // Write data
   rpc WriteChunk (WriteChunkRequest) returns (WriteChunkReply) {}
-  // Write data
+  // Push data
   rpc PushData (PushDataRequest) returns (PushDataReply) {}
   // Sends a ping
   rpc ClientServerPing (PingRequest) returns (PingReply) {}
 
   // TODO: AppendChunk
-  // TODO: PushData
 
   // Master -> Chunkserver RPCs
   // --------------------------
@@ -34,7 +33,8 @@ service GFS {
   // Chunkserver -> Chunkserver RPCs
   // --------------------------
 
-  // TODO: SerializedWrite (or similar)
+  // SerializedWrite from primary to replica ChunkServers
+  rpc SerializedWrite (SerializedWriteRequest) returns (SerializedWriteReply) {}
 }
 
 // The request message containing the user's name.
@@ -60,7 +60,15 @@ message WriteChunkRequest {
   google.protobuf.Timestamp timestamp = 2;
   int64 chunkhandle = 3;
   int64 offset = 4;
-// TODO: hash of the data
+  repeated string locations = 5;
+}
+
+// Serialized Write Request
+message SerializedWriteRequest {
+  int64 client_id = 1;
+  google.protobuf.Timestamp timestamp = 2;
+  int64 chunkhandle = 3;
+  int64 offset = 4;
 }
 
 // Read Chunk Reply
@@ -72,6 +80,10 @@ message ReadChunkReply {
 
 // Write Chunk Reply
 message WriteChunkReply {
+  int64 bytes_written = 1;
+}
+
+message SerializedWriteReply {
   int64 bytes_written = 1;
 }
 
@@ -121,10 +133,10 @@ service GFSMaster {
 
   // For a given filename and chunk index, allocate chunk servers, returns the chunk handle and
   // locations of replicas.
-  rpc AddChunk (AddChunkRequest) return (AddChunkReply) {}
+  rpc AddChunk (AddChunkRequest) returns (AddChunkReply) {}
 
   // For a given filename, returns the length of the file.
-  rpc GetFileLength (GetFileLengthRequest) return (GetFileLengthReply) {}
+  rpc GetFileLength (GetFileLengthRequest) returns (GetFileLengthReply) {}
 
   // Chunkserver -> Master RPCs
   // --------------------------

@@ -8,18 +8,25 @@
 
 class GFSClient {
  public:
-  GFSClient(std::shared_ptr<grpc::Channel> channel,
-            std::shared_ptr<grpc::Channel> master_channel,
+  GFSClient(std::shared_ptr<grpc::Channel> master_channel,
             int client_id)
-    : stub_(gfs::GFS::NewStub(channel))
-    , stub_master_(gfs::GFSMaster::NewStub(master_channel))
-    , client_id_(client_id) {}
+    : stub_master_(gfs::GFSMaster::NewStub(master_channel))
+    , client_id_(client_id) {
+    }
+
+  void AddChunkServer(std::string location);
+
+  std::vector<std::string> GetChunkServers();
+
+  void SetPrimary(std::string primary) { primary_ = primary; }
+
+  std::unique_ptr<gfs::GFS::Stub>& GetChunkServerStub(std::string location);
 
   //Client API fucntions
 
   // Assembles the client's payload, sends it and presents the response back
   // from the server.
-  std::string ClientServerPing(const std::string& user);
+  std::string ClientServerPing(const std::string& user, const std::string& cs);
 
   // Create a new file using absolute path. Returns true if success.
   bool Create(const std::string& filename);
@@ -69,8 +76,9 @@ class GFSClient {
   void FindMatchingFiles(const std::string& prefix);
 
 private:
-  // TODO: This stub_ needs to be replaced by one stub per chunkserver.
-  std::unique_ptr<gfs::GFS::Stub> stub_;
+  std::map<std::string, std::unique_ptr<gfs::GFS::Stub>> stub_cs_;
   std::unique_ptr<gfs::GFSMaster::Stub> stub_master_;
   int client_id_;
+  std::string primary_;
+  std::vector<std::string> chunkservers_;
 };

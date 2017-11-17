@@ -26,8 +26,6 @@
 #include "gfs.grpc.pb.h"
 #include "gfs_server.h"
 
-using google::protobuf::Timestamp;
-
 // Logic and data behind the server's behavior.
 Status GFSServiceImpl::ClientServerPing(ServerContext* context,
                                         const PingRequest* request,
@@ -68,26 +66,21 @@ Status GFSServiceImpl::ReadChunk(ServerContext* context,
   return Status::OK;
 }
 
-Status GFSServiceImpl::WriteChunk(ServerContext* context,
-                                  const WriteChunkRequest* request,
-                                  WriteChunkReply* reply) {
+int GFSServiceImpl::PerformLocalWriteChunk(const WriteChunkInfo& wc_info)
+{
   ChunkId chunk_id;
-  chunk_id.client_id = request->client_id();
-  Timestamp ts = request->timestamp();
+  chunk_id.client_id = wc_info.client_id;
+  Timestamp ts = wc_info.timestamp;
   chunk_id.timestamp.tv_sec = ts.seconds();
   chunk_id.timestamp.tv_usec = ts.nanos()/1000;
-  int chunkhandle = request->chunkhandle();
-  int offset = request->offset();
-
-  std::cout << "Got server WriteChunk for chunkhandle = " << \
-            request->chunkhandle() << std::endl;
+  int chunkhandle = wc_info.chunkhandle;
+  int offset = wc_info.offset;
 
   std::lock_guard<std::mutex> guard(buffercache_mutex);
 
   if (buffercache.find(chunk_id) == buffercache.end()) {
     std::cout << "Chunk data doesn't exists in buffercache" << std::endl;
-    reply->set_bytes_written(0);
-    return Status::OK;
+    return 0; // 0 bytes written
   }
 
   std::string data = buffercache[chunk_id];
@@ -97,23 +90,102 @@ Status GFSServiceImpl::WriteChunk(ServerContext* context,
 
   if ((length + offset >= CHUNK_SIZE_IN_BYTES)) {
     std::cout << "Write exceeds chunk size: " << length + offset << std::endl;
-    reply->set_bytes_written(0);
-    return Status::OK;
+    return 0;
   }
 
   std::ofstream outfile(filename.c_str(), std::ios::out | std::ios::binary);
   if (!outfile.is_open()) {
     std::cout << "can't open file for writing: " << filename << std::endl;
-    reply->set_bytes_written(0);
+    return 0;
   } else {
     outfile.seekp(offset, std::ios::beg);
     outfile.write(data.c_str(), length);
     outfile.close();
-    reply->set_bytes_written(length);
 
     // Write succeeded, so we can remove the buffercache entry
     buffercache.erase(chunk_id);
+    return length;
   }
+}
+
+int GFSServiceImpl::SendSerializedWriteChunk(WriteChunkInfo& wc_info,
+                                             const std::string location) {
+
+  SerializedWriteRequest request;
+  SerializedWriteReply reply;
+  ClientContext context;
+
+  // Create a connection to replica ChunkServer
+  std::unique_ptr<gfs::GFS::Stub> stub = gfs::GFS::NewStub(
+      grpc::CreateChannel(location, grpc::InsecureChannelCredentials()));
+
+  // Prepare Request -> Perform RPC -> Read reply -> Return
+  request.set_client_id(wc_info.client_id);
+  request.set_allocated_timestamp(&wc_info.timestamp);
+  request.set_chunkhandle(wc_info.chunkhandle);
+  request.set_offset(wc_info.offset);
+
+  Status status = stub->SerializedWrite(&context, request, &reply);
+  request.release_timestamp();
+
+  if (status.ok()) {
+    std::cout << "SerializedWrite bytes_written = " << reply.bytes_written() <<
+              " at location: " << location << std::endl;
+    return reply.bytes_written();
+  } else {
+    std::cout << "SerializedWrite failed at location: " << location << std::endl;
+    return 0;
+  }
+
+}
+
+Status GFSServiceImpl::SerializedWrite(ServerContext* context,
+                                  const SerializedWriteRequest* request,
+                                  SerializedWriteReply* reply) {
+  WriteChunkInfo wc_info;
+
+  wc_info.client_id = request->client_id();
+  wc_info.timestamp = request->timestamp();
+  wc_info.chunkhandle = request->chunkhandle();
+  wc_info.offset = request->offset();
+
+  reply->set_bytes_written(PerformLocalWriteChunk(wc_info));
+
+  return Status::OK;
+}
+
+Status GFSServiceImpl::WriteChunk(ServerContext* context,
+                                  const WriteChunkRequest* request,
+                                  WriteChunkReply* reply) {
+  int bytes_written;
+  WriteChunkInfo wc_info;
+
+  std::cout << "Got server WriteChunk for chunkhandle = " << \
+            request->chunkhandle() << std::endl;
+
+  wc_info.client_id = request->client_id();
+  wc_info.timestamp = request->timestamp();
+  wc_info.chunkhandle = request->chunkhandle();
+  wc_info.offset = request->offset();
+
+  bytes_written = PerformLocalWriteChunk(wc_info);
+
+  // If the local write succeeded, send SerializedWrites to backups
+  if (bytes_written) {
+    for (const auto& location : request->locations()) {
+      std::cout << "CS location: " << location << std::endl;
+      if (location == location_me)
+        continue;
+      if (!SendSerializedWriteChunk(wc_info, location)) {
+        bytes_written = 0;
+        std::cout << "SerializedWrite failed for location: " << location
+                  << std::endl;
+        break;
+      }
+    }
+  }
+
+  reply->set_bytes_written(bytes_written);
   return Status::OK;
 }
 
@@ -140,9 +212,9 @@ Status GFSServiceImpl::PushData(ServerContext* context,
   return Status::OK;
 }
 
-void RunServer(std::string path) {
-  std::string server_address("127.0.0.1:50051");
-  GFSServiceImpl service(path);
+void RunServer(std::string master_address, std::string path,
+               std::string server_address) {
+  GFSServiceImpl service(path, server_address);
 
   ServerBuilder builder;
   // Listen on the given address without any authentication mechanism.
@@ -160,11 +232,13 @@ void RunServer(std::string path) {
 }
 
 int main(int argc, char** argv) {
-  if (argc != 2) {
-    std::cout << "Usage: gfs_server path_to_local_file_directory" << std::endl;
+  if (argc != 4) {
+    std::cout << "Usage: ./gfs_server master_address (like IP:port) \
+              <path_to_local_file_directory> \
+              chunkserver_address (like IP:port)"
+              << std::endl;
     return 1;
   }
-  RunServer(argv[1]);
-
+  RunServer(argv[1], argv[2], argv[3]);
   return 0;
 }

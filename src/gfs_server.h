@@ -7,10 +7,36 @@
 // TODO: Move this definition to a common header
 #define CHUNK_SIZE_IN_BYTES 64 * (1 << 20) // 64MiB
 
+using grpc::Server;
+using grpc::ServerBuilder;
+using grpc::ServerContext;
+using grpc::Status;
+using gfs::PingRequest;
+using gfs::PingReply;
+using gfs::ReadChunkRequest;
+using gfs::ReadChunkReply;
+using gfs::WriteChunkRequest;
+using gfs::WriteChunkReply;
+using gfs::SerializedWriteRequest;
+using gfs::SerializedWriteReply;
+using gfs::PushDataRequest;
+using gfs::PushDataReply;
+using gfs::GFS;
+using grpc::Channel;
+using grpc::ClientContext;
+using google::protobuf::Timestamp;
+
 typedef struct ChunkId {
   int client_id;
   struct timeval timestamp;
 } ChunkId;
+
+typedef struct WriteChunkInfo {
+  int client_id;
+  Timestamp timestamp;
+  int chunkhandle;
+  int offset;
+} WriteChunkInfo;
 
 struct cmpChunkId {
   bool operator()(const ChunkId& c1, const ChunkId& c2) const {
@@ -22,25 +48,12 @@ struct cmpChunkId {
   }
 };
 
-using grpc::Server;
-using grpc::ServerBuilder;
-using grpc::ServerContext;
-using grpc::Status;
-using gfs::PingRequest;
-using gfs::PingReply;
-using gfs::ReadChunkRequest;
-using gfs::ReadChunkReply;
-using gfs::WriteChunkRequest;
-using gfs::WriteChunkReply;
-using gfs::PushDataRequest;
-using gfs::PushDataReply;
-using gfs::GFS;
-
 // Logic and data behind the server's behavior.
 class GFSServiceImpl final : public GFS::Service {
 public:
-  GFSServiceImpl(std::string path) {
+  GFSServiceImpl(std::string path, std::string server_address) {
     this->full_path = path;
+    this->location_me = server_address;
   }
 
   Status ClientServerPing(ServerContext* context, const PingRequest* request,
@@ -55,9 +68,19 @@ public:
   Status PushData(ServerContext* context, const PushDataRequest* request,
                   PushDataReply* reply);
 
+  int PerformLocalWriteChunk(const WriteChunkInfo& wc_info);
+
+  int SendSerializedWriteChunk(WriteChunkInfo& wc_info,
+                               const std::string location);
+
+  Status SerializedWrite(ServerContext* context,
+                         const SerializedWriteRequest* request,
+                         SerializedWriteReply* reply);
+
  private:
   std::string full_path;
   std::string metadata_file;
   std::map<ChunkId, std::string, cmpChunkId> buffercache;
   std::mutex buffercache_mutex;
+  std::string location_me;
 };

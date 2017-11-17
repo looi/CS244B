@@ -55,16 +55,26 @@ int main(int argc, char** argv) {
   // localhost at port 50051). We indicate that the channel isn't authenticated
   // (use of InsecureChannelCredentials()).
   GFSClient gfs_client(
-      grpc::CreateChannel("127.0.0.1:50051", grpc::InsecureChannelCredentials()),
       grpc::CreateChannel("127.0.0.1:50052", grpc::InsecureChannelCredentials()),
       42); // TODO: chose a better client_id
+
+  // Instantiate 3 chunk servers
+  gfs_client.AddChunkServer("127.0.0.1:33333");
+  gfs_client.AddChunkServer("127.0.0.1:44444");
+  gfs_client.AddChunkServer("127.0.0.1:55555");
+
+  gfs_client.SetPrimary("127.0.0.1:33333");
+
   std::string user("world");
-  for (int i = 0; i < 10; i++) {
+
+  for (auto& cs : gfs_client.GetChunkServers()) {
+    std::string reply = gfs_client.ClientServerPing(user, cs);
+    std::cout << "Client received: " << reply << std::endl;
+  }
+
+  for (int i = 0; i < 2; i++) {
     // int length;
     std::string data("new#data" + std::to_string(i));
-    std::string reply = gfs_client.ClientServerPing(user);
-    std::cout << "Client received: " << reply << std::endl;
-
     std::string rpc_result = gfs_client.WriteChunk(i, data, 0);
     data = gfs_client.ReadChunk(i, 0, data.length());
     std::cout << "Client received chunk data: " << data << std::endl;
@@ -78,7 +88,18 @@ int main(int argc, char** argv) {
   return 0;
 }
 
-std::string GFSClient::ClientServerPing(const std::string& user) {
+void GFSClient::AddChunkServer(std::string location) {
+  chunkservers_.push_back(location);
+  stub_cs_[location] = gfs::GFS::NewStub(
+      grpc::CreateChannel(location, grpc::InsecureChannelCredentials()));
+}
+
+std::vector<std::string> GFSClient::GetChunkServers() {
+  return chunkservers_;
+}
+
+std::string GFSClient::ClientServerPing(const std::string& user,
+                                        const std::string& cs) {
   // Data we are sending to the server.
   PingRequest request;
   request.set_name(user);
@@ -91,7 +112,7 @@ std::string GFSClient::ClientServerPing(const std::string& user) {
   ClientContext context;
 
   // The actual RPC.
-  Status status = stub_->ClientServerPing(&context, request, &reply);
+  Status status = stub_cs_[cs]->ClientServerPing(&context, request, &reply);
 
   // Act upon its status.
   if (status.ok()) {
@@ -119,7 +140,7 @@ std::string GFSClient::ReadChunk(const int chunkhandle, const int offset,
   ClientContext context;
 
   // The actual RPC.
-  Status status = stub_->ReadChunk(&context, request, &reply);
+  Status status = stub_cs_[primary_]->ReadChunk(&context, request, &reply);
 
   // Act upon its status.
   if (status.ok()) {
@@ -144,13 +165,16 @@ std::string GFSClient::WriteChunk(const int chunkhandle, const std::string data,
   struct timeval tv;
   gettimeofday(&tv, NULL);
 
-  if (!PushData(stub_, data, tv)) {
-    std::cout << "PushData succeeded for data = " << data << std::endl;
-  } else {
-    return "PushData RPC failed";
+  for (auto& stub : stub_cs_) {
+    if (PushData(stub.second, data, tv)) {
+      std::cout << "PushData succeeded to chunk server " << stub.first <<
+                " for data = " << data << std::endl;
+    } else {
+      return "PushData RPC failed";
+    }
   }
 
-  if (!SendWriteToChunkServer(stub_, chunkhandle, offset, tv)) {
+  if (SendWriteToChunkServer(stub_cs_[primary_], chunkhandle, offset, tv)) {
     return "RPC succeeded";
   } else {
     return "Write RPC failed";
@@ -197,9 +221,14 @@ bool GFSClient::SendWriteToChunkServer(std::unique_ptr<gfs::GFS::Stub> &stub,
 
   request.set_allocated_timestamp(&timestamp);
   request.set_client_id(client_id_);
-  request.set_allocated_timestamp(&timestamp);
   request.set_chunkhandle(chunkhandle);
   request.set_offset(offset);
+
+  for (auto& stub : stub_cs_) {
+    if (stub.first != primary_) {
+      request.add_locations(stub.first);
+    }
+  }
 
   Status status = stub->WriteChunk(&context, request, &reply);
   request.release_timestamp();
@@ -209,11 +238,12 @@ bool GFSClient::SendWriteToChunkServer(std::unique_ptr<gfs::GFS::Stub> &stub,
               std::endl;
     return true;
   } else {
+    std::cout << "Write Chunk failed " << std::endl;
     return false;
   }
 }
 
-void GFSClient::FindLeaseHolder(const std::string& filename, int64_t chunk_id) {
+void GFSClient::FindLeaseHolder(const std::string& filename, int64_t chunk_index) {
   FindLeaseHolderRequest request;
   request.set_filename(filename);
   request.set_chunk_index(chunk_index);
@@ -222,7 +252,7 @@ void GFSClient::FindLeaseHolder(const std::string& filename, int64_t chunk_id) {
   ClientContext context;
   Status status = stub_master_->FindLeaseHolder(&context, request, &reply);
   if (status.ok()) {
-    std::cout << "FindLeaseHolder file " << filename << " chunk id " << chunk_id
+    std::cout << "FindLeaseHolder file " << filename << " chunk id " << chunk_index
               << " got chunkhandle " << reply.chunkhandle() << std::endl;
   } else {
     std::cout << status.error_code() << ": " << status.error_message()
