@@ -30,20 +30,36 @@ Server listening on 0.0.0.0:50052
 ```
 
 #### Run chunkserver
-In another terminal, run `bin/gfs_server <path to local directory>` to get expected output:
+Currently the chunkserver addressress are hardcoded to 127.0.0.1:33333,
+127.0.0.1:44444, 127.0.0.1:55555
+In another 3 terminals, run `bin/gfs_server master_address (like IP:port) <path_to_local_file_directory> chunkserver_address (like IP:port)` to get expected output from 3 chunkservers:
 
 ```shell
-Server listening on 0.0.0.0:50051
-Got server WriteChunk for chunkhandle = 0 and data = new#data0
-Got server WriteChunk for chunkhandle = 1 and data = new#data1
-Got server WriteChunk for chunkhandle = 2 and data = new#data2
-Got server WriteChunk for chunkhandle = 3 and data = new#data3
-Got server WriteChunk for chunkhandle = 4 and data = new#data4
-Got server WriteChunk for chunkhandle = 5 and data = new#data5
-Got server WriteChunk for chunkhandle = 6 and data = new#data6
-Got server WriteChunk for chunkhandle = 7 and data = new#data7
-Got server WriteChunk for chunkhandle = 8 and data = new#data8
-Got server WriteChunk for chunkhandle = 9 and data = new#data9
+Server listening on 127.0.0.1:33333
+Got server PushData for clientid = 42 and data = new#data0
+Got server WriteChunk for chunkhandle = 0
+CS location: 127.0.0.1:44444
+SerializedWrite bytes_written = 9 at location: 127.0.0.1:44444
+CS location: 127.0.0.1:55555
+SerializedWrite bytes_written = 9 at location: 127.0.0.1:55555
+Got server PushData for clientid = 42 and data = new#data1
+Got server WriteChunk for chunkhandle = 1
+CS location: 127.0.0.1:44444
+SerializedWrite bytes_written = 9 at location: 127.0.0.1:44444
+CS location: 127.0.0.1:55555
+SerializedWrite bytes_written = 9 at location: 127.0.0.1:55555
+```
+
+```shell
+Server listening on 127.0.0.1:44444
+Got server PushData for clientid = 42 and data = new#data0
+Got server PushData for clientid = 42 and data = new#data1
+```
+
+```shell
+Server listening on 127.0.0.1:55555
+Got server PushData for clientid = 42 and data = new#data0
+Got server PushData for clientid = 42 and data = new#data1
 ```
 
 #### Run client
@@ -51,35 +67,24 @@ With server running, in another terminal, run `bin/gfs_client` to get expected o
 
 ```shell
 Client received: Hello world
+Client received: Hello world
+Client received: Hello world
+PushData succeeded for data = new#data0
+PushData succeeded to chunk server 127.0.0.1:33333 for data = new#data0
+PushData succeeded for data = new#data0
+PushData succeeded to chunk server 127.0.0.1:44444 for data = new#data0
+PushData succeeded for data = new#data0
+PushData succeeded to chunk server 127.0.0.1:55555 for data = new#data0
 Write Chunk written_bytes = 9
 Client received chunk data: new#data0
-Client received: Hello world
+PushData succeeded for data = new#data1
+PushData succeeded to chunk server 127.0.0.1:33333 for data = new#data1
+PushData succeeded for data = new#data1
+PushData succeeded to chunk server 127.0.0.1:44444 for data = new#data1
+PushData succeeded for data = new#data1
+PushData succeeded to chunk server 127.0.0.1:55555 for data = new#data1
 Write Chunk written_bytes = 9
 Client received chunk data: new#data1
-Client received: Hello world
-Write Chunk written_bytes = 9
-Client received chunk data: new#data2
-Client received: Hello world
-Write Chunk written_bytes = 9
-Client received chunk data: new#data3
-Client received: Hello world
-Write Chunk written_bytes = 9
-Client received chunk data: new#data4
-Client received: Hello world
-Write Chunk written_bytes = 9
-Client received chunk data: new#data5
-Client received: Hello world
-Write Chunk written_bytes = 9
-Client received chunk data: new#data6
-Client received: Hello world
-Write Chunk written_bytes = 9
-Client received chunk data: new#data7
-Client received: Hello world
-Write Chunk written_bytes = 9
-Client received chunk data: new#data8
-Client received: Hello world
-Write Chunk written_bytes = 9
-Client received chunk data: new#data9
 FindLeaseHolder file a/aa.txt chunk id 0 got chunkhandle 1
 FindLeaseHolder file a/ab.txt chunk id 0 got chunkhandle 2
 FindLeaseHolder file a/aa.txt chunk id 0 got chunkhandle 1
