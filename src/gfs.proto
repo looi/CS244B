@@ -160,8 +160,6 @@ message FindMatchingFilesRequest {
 message FindMatchingFilesReply {
   message File {
     string filename = 1;
-    // The chunk indexes range from 0 to num_chunks-1.
-    int64 num_chunks = 2;
   }
   repeated File files = 1;
 }
@@ -221,7 +219,7 @@ message GetFileLengthRequest {
 }
 
 message GetFileLengthReply {
-  int64 filen_length = 1;
+  int64 num_chunks = 1;
 }
 
 message HeartbeatRequest {
