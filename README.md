@@ -78,6 +78,7 @@ PushData succeeded to chunk server 127.0.0.1:55555 for data = new#data0
 Write Chunk written_bytes = 9
 Write status: OK
 Read status: OK data: new#data0
+File a/test0.txt num_chunks = 1
 PushData succeeded for data = new#data1
 PushData succeeded to chunk server 127.0.0.1:33333 for data = new#data1
 PushData succeeded for data = new#data1
@@ -87,6 +88,7 @@ PushData succeeded to chunk server 127.0.0.1:55555 for data = new#data1
 Write Chunk written_bytes = 9
 Write status: OK
 Read status: OK data: new#data1
+File a/test1.txt num_chunks = 1
 FindMatchingFiles results: 2 files
 =======================================
 a/test0.txt

@@ -22,6 +22,8 @@ using gfs::FindLocationsRequest;
 using gfs::FindLocationsReply;
 using gfs::FindMatchingFilesRequest;
 using gfs::FindMatchingFilesReply;
+using gfs::GetFileLengthRequest;
+using gfs::GetFileLengthReply;
 using gfs::PingRequest;
 using gfs::PingReply;
 using gfs::ReadChunkRequest;
@@ -69,6 +71,7 @@ int main(int argc, char** argv) {
     status = gfs_client.Read(&data2, filename, 0, data.length());
     std::cout << "Read status: " << FormatStatus(status)
               << " data: " << data2 << std::endl;
+    gfs_client.GetFileLength(filename);
   }
   gfs_client.FindMatchingFiles("a/test");
   return 0;
@@ -290,6 +293,21 @@ void GFSClient::FindMatchingFiles(const std::string& prefix) {
     for (const auto& file_metadata : reply.files()) {
       std::cout << file_metadata.filename() << std::endl;
     }
+  } else {
+    std::cout << status.error_code() << ": " << status.error_message()
+              << std::endl;
+  }
+}
+
+void GFSClient::GetFileLength(const std::string& filename) {
+  GetFileLengthRequest request;
+  request.set_filename(filename);
+
+  GetFileLengthReply reply;
+  ClientContext context;
+  Status status = stub_master_->GetFileLength(&context, request, &reply);
+  if (status.ok()) {
+    std::cout << "File " << filename << " num_chunks = " << reply.num_chunks() << std::endl;
   } else {
     std::cout << status.error_code() << ": " << status.error_message()
               << std::endl;
