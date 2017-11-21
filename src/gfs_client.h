@@ -20,8 +20,6 @@ class GFSClient {
 
   void SetPrimary(std::string primary) { primary_ = primary; }
 
-  std::unique_ptr<gfs::GFS::Stub>& GetChunkServerStub(std::string location);
-
   //Client API fucntions
 
   // Assembles the client's payload, sends it and presents the response back

@@ -143,13 +143,19 @@ Status GFSServiceImpl::SerializedWrite(ServerContext* context,
                                   const SerializedWriteRequest* request,
                                   SerializedWriteReply* reply) {
   WriteChunkInfo wc_info;
+  int bytes_written;
 
   wc_info.client_id = request->client_id();
   wc_info.timestamp = request->timestamp();
   wc_info.chunkhandle = request->chunkhandle();
   wc_info.offset = request->offset();
 
-  reply->set_bytes_written(PerformLocalWriteChunk(wc_info));
+  bytes_written = PerformLocalWriteChunk(wc_info);
+  reply->set_bytes_written(bytes_written);
+
+  if (bytes_written) {
+    ReportChunkInfo(wc_info);
+  }
 
   return Status::OK;
 }
@@ -171,6 +177,7 @@ Status GFSServiceImpl::WriteChunk(ServerContext* context,
   bytes_written = PerformLocalWriteChunk(wc_info);
 
   // If the local write succeeded, send SerializedWrites to backups
+  // TODO: Doesn't work with multiple clients. Implement version number
   if (bytes_written) {
     for (const auto& location : request->locations()) {
       std::cout << "CS location: " << location << std::endl;
@@ -186,6 +193,11 @@ Status GFSServiceImpl::WriteChunk(ServerContext* context,
   }
 
   reply->set_bytes_written(bytes_written);
+
+  if (bytes_written) {
+    ReportChunkInfo(wc_info);
+  }
+
   return Status::OK;
 }
 
@@ -212,9 +224,30 @@ Status GFSServiceImpl::PushData(ServerContext* context,
   return Status::OK;
 }
 
+void GFSServiceImpl::ReportChunkInfo(WriteChunkInfo& wc_info) {
+  HeartbeatRequest request;
+  HeartbeatReply reply;
+  ClientContext context;
+
+  if (metadata.find(wc_info.chunkhandle) != metadata.end()) {
+    return;
+  }
+  metadata[wc_info.chunkhandle] = version_number; // TODO: implement version
+
+  auto *chunk_info = request.add_chunks();
+  chunk_info->set_chunkhandle(wc_info.chunkhandle);
+  request.set_location(location_me);
+
+  Status status = stub_master->Heartbeat(&context, request, &reply);
+  if (status.ok()) {
+    std::cout << "New chunkhandle hearbeat sent for: " << wc_info.chunkhandle
+              << std::endl;
+  }
+}
+
 void RunServer(std::string master_address, std::string path,
                std::string server_address) {
-  GFSServiceImpl service(path, server_address);
+  GFSServiceImpl service(path, server_address, master_address);
 
   ServerBuilder builder;
   // Listen on the given address without any authentication mechanism.

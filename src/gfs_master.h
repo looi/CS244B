@@ -16,6 +16,8 @@ using gfs::FindLeaseHolderReply;
 using gfs::GFSMaster;
 using gfs::FindMatchingFilesRequest;
 using gfs::FindMatchingFilesReply;
+using gfs::HeartbeatRequest;
+using gfs::HeartbeatReply;
 
 // Logic and data behind the server's behavior.
 class GFSMasterImpl final : public GFSMaster::Service {
@@ -28,7 +30,11 @@ class GFSMasterImpl final : public GFSMaster::Service {
   Status FindMatchingFiles(ServerContext* context,
                            const FindMatchingFilesRequest* request,
                            FindMatchingFilesReply* reply) override;
-
+  Status Heartbeat(ServerContext* context,
+                   const HeartbeatRequest* request,
+                   HeartbeatReply* response) {
+    return Status::OK;
+  }
 
  private:
   void ThrowIfSqliteFailed(int rc);
