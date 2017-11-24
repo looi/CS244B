@@ -42,24 +42,30 @@ CS location: 127.0.0.1:44444
 SerializedWrite bytes_written = 9 at location: 127.0.0.1:44444
 CS location: 127.0.0.1:55555
 SerializedWrite bytes_written = 9 at location: 127.0.0.1:55555
+New chunkhandle hearbeat sent for: 0
 Got server PushData for clientid = 42 and data = new#data1
 Got server WriteChunk for chunkhandle = 2
 CS location: 127.0.0.1:44444
 SerializedWrite bytes_written = 9 at location: 127.0.0.1:44444
 CS location: 127.0.0.1:55555
 SerializedWrite bytes_written = 9 at location: 127.0.0.1:55555
+New chunkhandle hearbeat sent for: 1
 ```
 
 ```shell
 Server listening on 127.0.0.1:44444
 Got server PushData for clientid = 42 and data = new#data0
+New chunkhandle hearbeat sent for: 0
 Got server PushData for clientid = 42 and data = new#data1
+New chunkhandle hearbeat sent for: 1
 ```
 
 ```shell
 Server listening on 127.0.0.1:55555
 Got server PushData for clientid = 42 and data = new#data0
+New chunkhandle hearbeat sent for: 0
 Got server PushData for clientid = 42 and data = new#data1
+New chunkhandle hearbeat sent for: 1
 ```
 
 #### Run client

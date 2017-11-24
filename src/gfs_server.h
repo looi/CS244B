@@ -9,6 +9,8 @@ using grpc::Server;
 using grpc::ServerBuilder;
 using grpc::ServerContext;
 using grpc::Status;
+using gfs::GFS;
+using gfs::GFSMaster;
 using gfs::PingRequest;
 using gfs::PingReply;
 using gfs::ReadChunkRequest;
@@ -19,7 +21,8 @@ using gfs::SerializedWriteRequest;
 using gfs::SerializedWriteReply;
 using gfs::PushDataRequest;
 using gfs::PushDataReply;
-using gfs::GFS;
+using gfs::HeartbeatRequest;
+using gfs::HeartbeatReply;
 using grpc::Channel;
 using grpc::ClientContext;
 using google::protobuf::Timestamp;
@@ -49,9 +52,14 @@ struct cmpChunkId {
 // Logic and data behind the server's behavior.
 class GFSServiceImpl final : public GFS::Service {
 public:
-  GFSServiceImpl(std::string path, std::string server_address) {
+  GFSServiceImpl(std::string path, std::string server_address,
+                 std::string master_address) {
     this->full_path = path;
     this->location_me = server_address;
+    this->version_number = 1;
+    stub_master = gfs::GFSMaster::NewStub(grpc::CreateChannel
+                                    (master_address,
+                                     grpc::InsecureChannelCredentials()));
   }
 
   Status ClientServerPing(ServerContext* context, const PingRequest* request,
@@ -66,6 +74,9 @@ public:
   Status PushData(ServerContext* context, const PushDataRequest* request,
                   PushDataReply* reply);
 
+  Status Heartbeat(ServerContext* context, const PushDataRequest* request,
+                  PushDataReply* reply);
+
   int PerformLocalWriteChunk(const WriteChunkInfo& wc_info);
 
   int SendSerializedWriteChunk(WriteChunkInfo& wc_info,
@@ -75,10 +86,15 @@ public:
                          const SerializedWriteRequest* request,
                          SerializedWriteReply* reply);
 
+  void ReportChunkInfo(WriteChunkInfo& wc_info);
+
  private:
+  std::unique_ptr<gfs::GFSMaster::Stub> stub_master;
   std::string full_path;
   std::string metadata_file;
   std::map<ChunkId, std::string, cmpChunkId> buffercache;
+  std::map<int, int> metadata; // int chunkhandle, int version_no
   std::mutex buffercache_mutex;
   std::string location_me;
+  int version_number;
 };

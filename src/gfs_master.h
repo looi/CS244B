@@ -20,6 +20,8 @@ using gfs::FindMatchingFilesRequest;
 using gfs::FindMatchingFilesReply;
 using gfs::GetFileLengthRequest;
 using gfs::GetFileLengthReply;
+using gfs::HeartbeatRequest;
+using gfs::HeartbeatReply;
 
 // Logic and data behind the server's behavior.
 class GFSMasterImpl final : public GFSMaster::Service {
@@ -38,7 +40,11 @@ class GFSMasterImpl final : public GFSMaster::Service {
   Status GetFileLength(ServerContext* context,
                        const GetFileLengthRequest* request,
                        GetFileLengthReply* reply) override;
-
+  Status Heartbeat(ServerContext* context,
+                   const HeartbeatRequest* request,
+                   HeartbeatReply* response) {
+    return Status::OK;
+  }
 
  private:
   // Gets file id from SQLite or -1 if does not exist.
