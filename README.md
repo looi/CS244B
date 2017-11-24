@@ -37,14 +37,14 @@ In another 3 terminals, run `bin/gfs_server master_address (like IP:port) <path_
 ```shell
 Server listening on 127.0.0.1:33333
 Got server PushData for clientid = 42 and data = new#data0
-Got server WriteChunk for chunkhandle = 0
+Got server WriteChunk for chunkhandle = 1
 CS location: 127.0.0.1:44444
 SerializedWrite bytes_written = 9 at location: 127.0.0.1:44444
 CS location: 127.0.0.1:55555
 SerializedWrite bytes_written = 9 at location: 127.0.0.1:55555
 New chunkhandle hearbeat sent for: 0
 Got server PushData for clientid = 42 and data = new#data1
-Got server WriteChunk for chunkhandle = 1
+Got server WriteChunk for chunkhandle = 2
 CS location: 127.0.0.1:44444
 SerializedWrite bytes_written = 9 at location: 127.0.0.1:44444
 CS location: 127.0.0.1:55555
@@ -72,9 +72,9 @@ New chunkhandle hearbeat sent for: 1
 With server running, in another terminal, run `bin/gfs_client` to get expected output:
 
 ```shell
-Client received: Hello world
-Client received: Hello world
-Client received: Hello world
+FindMatchingFiles results: 0 files
+=======================================
+Read status: (5: File does not exist.) data: 
 PushData succeeded for data = new#data0
 PushData succeeded to chunk server 127.0.0.1:33333 for data = new#data0
 PushData succeeded for data = new#data0
@@ -82,7 +82,9 @@ PushData succeeded to chunk server 127.0.0.1:44444 for data = new#data0
 PushData succeeded for data = new#data0
 PushData succeeded to chunk server 127.0.0.1:55555 for data = new#data0
 Write Chunk written_bytes = 9
-Client received chunk data: new#data0
+Write status: OK
+Read status: OK data: new#data0
+File a/test0.txt num_chunks = 1
 PushData succeeded for data = new#data1
 PushData succeeded to chunk server 127.0.0.1:33333 for data = new#data1
 PushData succeeded for data = new#data1
@@ -90,14 +92,13 @@ PushData succeeded to chunk server 127.0.0.1:44444 for data = new#data1
 PushData succeeded for data = new#data1
 PushData succeeded to chunk server 127.0.0.1:55555 for data = new#data1
 Write Chunk written_bytes = 9
-Client received chunk data: new#data1
-FindLeaseHolder file a/aa.txt chunk id 0 got chunkhandle 1
-FindLeaseHolder file a/ab.txt chunk id 0 got chunkhandle 2
-FindLeaseHolder file a/aa.txt chunk id 0 got chunkhandle 1
-FindLeaseHolder file a/aa.txt chunk id 1 got chunkhandle 3
-FindLeaseHolder file a/b.txt chunk id 0 got chunkhandle 4
-FindMatchingFiles filename a/aa.txt
-FindMatchingFiles filename a/ab.txt
+Write status: OK
+Read status: OK data: new#data1
+File a/test1.txt num_chunks = 1
+FindMatchingFiles results: 2 files
+=======================================
+a/test0.txt
+a/test1.txt
 ```
 
 * The local directory should also contain the 10 files with the data the client provided.

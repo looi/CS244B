@@ -6,6 +6,10 @@
 #include <grpc++/grpc++.h>
 #include "gfs.grpc.pb.h"
 
+using grpc::Status;
+using gfs::FindLeaseHolderReply;
+using gfs::FindLocationsReply;
+
 class GFSClient {
  public:
   GFSClient(std::shared_ptr<grpc::Channel> master_channel,
@@ -13,12 +17,6 @@ class GFSClient {
     : stub_master_(gfs::GFSMaster::NewStub(master_channel))
     , client_id_(client_id) {
     }
-
-  void AddChunkServer(std::string location);
-
-  std::vector<std::string> GetChunkServers();
-
-  void SetPrimary(std::string primary) { primary_ = primary; }
 
   //Client API fucntions
 
@@ -39,13 +37,12 @@ class GFSClient {
   // succeeded.
   bool Delete(const std::string& path);
 
-  // Fills the byte array with contents with off-set in the file. Returns the
-  // number of bytes it reads.
-  int Read(char *buf, const std::string& filename, const int offset);
+  // Fills the string with contents with off-set in the file.
+  Status Read(std::string* buf, const std::string& filename,
+              const int offset, const int length);
 
-  // Writes the byte array content to the file with an off-set. Returns the
-  // number of bytes it reads.
-  bool Write(char *buf, const std::string& filename, const int offset);
+  // Writes the string to the file with an off-set.
+  Status Write(const std::string& buf, const std::string& filename, const int offset);
 
   // Appends the byte array to a file. Returns the off-set that the content resides in.
   int Append(char *buf, const std::string& filename);
@@ -54,26 +51,42 @@ class GFSClient {
 
   // Client ReadChunk implementation
   std::string ReadChunk(const int chunkhandle, const int offset,
-                        const int length);
+                        const int length, const std::string& location);
 
   // Client WriteChunk implementation
   std::string WriteChunk(const int chunkhandle, const std::string data,
-                         const int offset);
+                         const int offset, const std::vector<std::string>& locations,
+                         const std::string& primary_location);
 
-  bool PushData(std::unique_ptr<gfs::GFS::Stub> &stub, const std::string data,
-                                const struct timeval timstamp);
+  bool PushData(gfs::GFS::Stub* stub, const std::string& data,
+                const struct timeval timstamp);
 
-  bool SendWriteToChunkServer(std::unique_ptr<gfs::GFS::Stub> &stub,
-                              const int chunkhandle, const int offset,
-                              const struct timeval timstamp);
-
-  // Get chunkhandle of a file, create a chunk if the file is not found
-  void FindLeaseHolder(const std::string& filename, int64_t chunk_id);
+  bool SendWriteToChunkServer(const int chunkhandle, const int offset,
+                              const struct timeval timstamp,
+                              const std::vector<std::string>& locations,
+                              const std::string& primary_location);
 
   // Print all the file as for now
   void FindMatchingFiles(const std::string& prefix);
 
+  // Gets number of chunks in the file, prints for now
+  void GetFileLength(const std::string& filename);
+
 private:
+  // Gets connection to chunkserver, opening a new one if necessary
+  gfs::GFS::Stub* GetChunkserverStub(const std::string& location);
+
+  // Get chunkhandle and locations of a file for reading
+  Status FindLocations(FindLocationsReply *reply,
+                       const std::string& filename,
+                       int64_t chunk_index);
+
+  // Get chunkhandle and locations of a file for writing,
+  // create a chunk if the file is not found
+  Status FindLeaseHolder(FindLeaseHolderReply *reply,
+                         const std::string& filename,
+                         int64_t chunk_index);
+
   std::map<std::string, std::unique_ptr<gfs::GFS::Stub>> stub_cs_;
   std::unique_ptr<gfs::GFSMaster::Stub> stub_master_;
   int client_id_;

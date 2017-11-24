@@ -3,9 +3,7 @@
 
 #include <grpc++/grpc++.h>
 #include "gfs.grpc.pb.h"
-
-// TODO: Move this definition to a common header
-#define CHUNK_SIZE_IN_BYTES 64 * (1 << 20) // 64MiB
+#include "gfs_common.h"
 
 using grpc::Server;
 using grpc::ServerBuilder;

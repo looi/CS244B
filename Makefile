@@ -71,7 +71,7 @@ $(TEMP_PATH)/%.pb.cc: $(SRC_PATH)/%.proto
 $(TEMP_PATH)/sqlite3.o: $(SRC_PATH)/sqlite3.c
 	gcc -c -O2 -o $@ $<
 
-$(TEMP_PATH)/%.o: $(SRC_PATH)/%.cc
+$(TEMP_PATH)/%.o: $(SRC_PATH)/%.cc $(SRC_PATH)/%.h $(SRC_PATH)/gfs_common.h
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c -o $@ $<
 
 $(TEMP_PATH)/%.pb.o: $(TEMP_PATH)/%.pb.cc

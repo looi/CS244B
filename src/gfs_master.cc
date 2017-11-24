@@ -32,13 +32,41 @@ GFSMasterImpl::~GFSMasterImpl() {
   sqlite3_close(db_);
 }
 
+Status GFSMasterImpl::FindLocations(ServerContext* context,
+                                    const FindLocationsRequest* request,
+                                    FindLocationsReply* reply) {
+  const std::string& filename = request->filename();
+  const int64_t chunk_index = request->chunk_index();
+
+  // Get file id.
+  int64_t file_id = GetFileId(filename);
+  if (file_id == -1) {
+    return Status(grpc::NOT_FOUND, "File does not exist.");
+  }
+
+  // Get chunkhandle.
+  int64_t chunkhandle = GetChunkhandle(file_id, chunk_index);
+  if (chunkhandle == -1) {
+    return Status(grpc::NOT_FOUND, "Chunk index does not exist.");
+  }
+
+  // Get locations
+  std::vector<std::string> locations = GetLocations(chunkhandle);
+  
+  reply->set_chunkhandle(chunkhandle);
+  for (const auto& location : locations) {
+    reply->add_locations(location);
+  }
+  return Status::OK;
+}
+
 Status GFSMasterImpl::FindLeaseHolder(ServerContext* context,
                                       const FindLeaseHolderRequest* request,
                                       FindLeaseHolderReply* reply) {
   const std::string& filename = request->filename();
   const int64_t chunk_index = request->chunk_index();
 
-  // Try to insert file, ignoring if it already exists.
+  // Try to insert file, ignoring if it already exists
   sqlite3_stmt *insert_file_stmt;
   ThrowIfSqliteFailed(sqlite3_prepare_v2(db_,
       "INSERT OR IGNORE INTO file (filename) VALUES (?)",
@@ -49,15 +77,15 @@ Status GFSMasterImpl::FindLeaseHolder(ServerContext* context,
   ThrowIfSqliteFailed(sqlite3_finalize(insert_file_stmt));
 
   // Get file id.
-  sqlite3_stmt *select_file_stmt;
-  ThrowIfSqliteFailed(sqlite3_prepare_v2(db_,
-      "SELECT file_id FROM file WHERE filename=?",
-      -1, &select_file_stmt, nullptr));
-  ThrowIfSqliteFailed(sqlite3_bind_text(select_file_stmt,
-      1, filename.c_str(), filename.length(), SQLITE_STATIC));
-  ThrowIfSqliteFailed(sqlite3_step(select_file_stmt));
-  int64_t file_id = sqlite3_column_int64(select_file_stmt, 0);
-  ThrowIfSqliteFailed(sqlite3_finalize(select_file_stmt));
+  int64_t file_id = GetFileId(filename);
+  if (file_id == -1) {
+    return Status(grpc::NOT_FOUND, "File does not exist.");
+  }
+
+  // Chunk index - 1 must exist already
+  if (chunk_index > 1 && GetChunkhandle(file_id, chunk_index-1) == -1) {
+    return Status(grpc::FAILED_PRECONDITION, "Chunk index - 1 does not exist.");
+  }
 
   // Try to insert chunk, ignoring if it already exists
   sqlite3_stmt *insert_chunk_stmt;
@@ -70,17 +98,19 @@ Status GFSMasterImpl::FindLeaseHolder(ServerContext* context,
   ThrowIfSqliteFailed(sqlite3_finalize(insert_chunk_stmt));
 
   // Get chunkhandle.
-  sqlite3_stmt *select_chunk_stmt;
-  ThrowIfSqliteFailed(sqlite3_prepare_v2(db_,
-      "SELECT chunkhandle FROM chunk WHERE file_id=? AND chunk_index=?",
-      -1, &select_chunk_stmt, nullptr));
-  ThrowIfSqliteFailed(sqlite3_bind_int64(select_chunk_stmt, 1, file_id));
-  ThrowIfSqliteFailed(sqlite3_bind_int64(select_chunk_stmt, 2, chunk_index));
-  ThrowIfSqliteFailed(sqlite3_step(select_chunk_stmt));
-  int64_t chunkhandle = sqlite3_column_int64(select_chunk_stmt, 0);
-  ThrowIfSqliteFailed(sqlite3_finalize(select_chunk_stmt));
+  int64_t chunkhandle = GetChunkhandle(file_id, chunk_index);
+  if (chunkhandle == -1) {
+    return Status(grpc::NOT_FOUND, "Chunk index does not exist.");
+  }
+
+  // Get locations
+  std::vector<std::string> locations = GetLocations(chunkhandle);
   
   reply->set_chunkhandle(chunkhandle);
+  for (const auto& location : locations) {
+    reply->add_locations(location);
+  }
+  reply->set_primary_location(locations.at(0));
   return Status::OK;
 }
 
@@ -105,6 +135,58 @@ Status GFSMasterImpl::FindMatchingFiles(ServerContext* context,
   }
   ThrowIfSqliteFailed(sqlite3_finalize(list_files_stmt));
   return Status::OK;
+}
+
+Status GFSMasterImpl::GetFileLength(ServerContext* context,
+                                    const GetFileLengthRequest* request,
+                                    GetFileLengthReply* reply) {
+  int64_t file_id = GetFileId(request->filename());
+  if (file_id == -1) {
+    return Status(grpc::NOT_FOUND, "File does not exist.");
+  }
+
+  // Get number of chunks from sqlite.
+  sqlite3_stmt *select_count_stmt;
+  ThrowIfSqliteFailed(sqlite3_prepare_v2(db_,
+      "SELECT COUNT(*) FROM chunk WHERE file_id=?",
+      -1, &select_count_stmt, nullptr));
+  ThrowIfSqliteFailed(sqlite3_bind_int64(select_count_stmt, 1, file_id));
+  ThrowIfSqliteFailed(sqlite3_step(select_count_stmt));
+  int64_t num_chunks = sqlite3_column_int64(select_count_stmt, 0);
+  ThrowIfSqliteFailed(sqlite3_finalize(select_count_stmt));
+  reply->set_num_chunks(num_chunks);
+  return Status::OK;
+}
+
+int64_t GFSMasterImpl::GetFileId(const std::string& filename) {
+  sqlite3_stmt *select_file_stmt;
+  ThrowIfSqliteFailed(sqlite3_prepare_v2(db_,
+      "SELECT file_id FROM file WHERE filename=?",
+      -1, &select_file_stmt, nullptr));
+  ThrowIfSqliteFailed(sqlite3_bind_text(select_file_stmt,
+      1, filename.c_str(), filename.length(), SQLITE_STATIC));
+  if (sqlite3_step(select_file_stmt) != SQLITE_ROW) return -1;
+  int64_t file_id = sqlite3_column_int64(select_file_stmt, 0);
+  ThrowIfSqliteFailed(sqlite3_finalize(select_file_stmt));
+  return file_id;
+}
+
+int64_t GFSMasterImpl::GetChunkhandle(int64_t file_id, int64_t chunk_index) {
+  sqlite3_stmt *select_chunk_stmt;
+  ThrowIfSqliteFailed(sqlite3_prepare_v2(db_,
+      "SELECT chunkhandle FROM chunk WHERE file_id=? AND chunk_index=?",
+      -1, &select_chunk_stmt, nullptr));
+  ThrowIfSqliteFailed(sqlite3_bind_int64(select_chunk_stmt, 1, file_id));
+  ThrowIfSqliteFailed(sqlite3_bind_int64(select_chunk_stmt, 2, chunk_index));
+  if (sqlite3_step(select_chunk_stmt) != SQLITE_ROW) return -1;
+  int64_t chunkhandle = sqlite3_column_int64(select_chunk_stmt, 0);
+  ThrowIfSqliteFailed(sqlite3_finalize(select_chunk_stmt));
+  return chunkhandle;
+}
+
+std::vector<std::string> GFSMasterImpl::GetLocations(int64_t chunkhandle) {
+  // TODO: Replace with non-hardcoded locations
+  return {"127.0.0.1:33333", "127.0.0.1:44444", "127.0.0.1:55555"};
 }
 
 void GFSMasterImpl::ThrowIfSqliteFailed(int rc) {
