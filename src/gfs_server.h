@@ -53,14 +53,7 @@ struct cmpChunkId {
 class GFSServiceImpl final : public GFS::Service {
 public:
   GFSServiceImpl(std::string path, std::string server_address,
-                 std::string master_address) {
-    this->full_path = path;
-    this->location_me = server_address;
-    this->version_number = 1;
-    stub_master = gfs::GFSMaster::NewStub(grpc::CreateChannel
-                                    (master_address,
-                                     grpc::InsecureChannelCredentials()));
-  }
+                 std::string master_address);
 
   Status ClientServerPing(ServerContext* context, const PingRequest* request,
                           PingReply* reply);

@@ -26,6 +26,28 @@
 #include "gfs.grpc.pb.h"
 #include "gfs_server.h"
 
+GFSServiceImpl::GFSServiceImpl(std::string path, std::string server_address,
+                               std::string master_address) {
+  this->full_path = path;
+  this->location_me = server_address;
+  this->version_number = 1;
+  stub_master = gfs::GFSMaster::NewStub(grpc::CreateChannel
+                  (master_address,
+                   grpc::InsecureChannelCredentials()));
+
+  // Send initial heartbeat to master so that master knows about this server.
+  HeartbeatRequest request;
+  HeartbeatReply reply;
+  ClientContext context;
+  request.set_location(location_me);
+  Status status = stub_master->Heartbeat(&context, request, &reply);
+  if (status.ok()) {
+    std::cout << "Successfully registered with master." << std::endl;
+  } else {
+    std::cout << "Failed to register with master." << std::endl;
+  }
+}
+
 // Logic and data behind the server's behavior.
 Status GFSServiceImpl::ClientServerPing(ServerContext* context,
                                         const PingRequest* request,
