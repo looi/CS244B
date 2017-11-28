@@ -63,20 +63,14 @@ int main(int argc, char** argv) {
   Status status = gfs_client.Read(&buf, "a/test0.txt", 0, 10);
   std::cout << "Read status: " << FormatStatus(status)
             << " data: " << buf << std::endl;
-  return 0;
 
-  clock_t benchmark_t;
   for (int i = 0; i < 2; i++) {
     // int length;
     std::string data("new#data" + std::to_string(i));
     std::string filename("a/test" + std::to_string(i) + ".txt");
-    benchmark_t = clock();
+    
     Status status = gfs_client.Write(data, filename, 0);
-    benchmark_t = clock() - benchmark_t;
     std::cout << "Write status: " << FormatStatus(status) << std::endl;
-
-    // Pushing Write data to Benchmark Server
-    gfs_client.BMAddConcurrentWriteClData(1, benchmark_t/(CLOCKS_PER_SEC/1000));
 
     std::string data2;
     status = gfs_client.Read(&data2, filename, 0, data.length());
@@ -85,17 +79,45 @@ int main(int argc, char** argv) {
     gfs_client.GetFileLength(filename);
   }
   gfs_client.FindMatchingFiles("a/test");
+
+  ////////////////////////////////////////////////////
+  // Concurrent write benchmark main function part. //
+  ////////////////////////////////////////////////////
+  // Create a file and make it large enough to use
+  std::string bm_filename = "a/bench_concurrent_write_dif_client_num";
+  char bm_data[] = "some#data#to#write";
+  // const int kWriteFileChunckNum = 1000;
+  // const int kWriteFileLen = kWriteFileChunckNum * CHUNK_SIZE_IN_BYTES;
+  // gfs_client.Create(filename);
+  // for (int i = 0; i < kWriteFileChunckNum; i++) {
+  //   gfs_client.Append(data, filename);
+  // }
+  clock_t benchmark_start_t, duration_t;
+  benchmark_start_t = clock();
+  while ((clock() - benchmark_start_t)/CLOCKS_PER_SEC < 20) {
+    // TODO: replace it with a randomly generated number x (0<=x<kWriteFileChunckNum)
+    int write_offset = 0;
+    
+    duration_t = clock();
+    Status status = gfs_client.Write(bm_data, bm_filename, write_offset);
+    duration_t = clock() - duration_t;
+    //TODO: maybe add it to Write rpc??
+    int client_num = 1;
+
+    // Pushing Write data to Benchmark Server
+    gfs_client.BMAddConcurrentWriteClData(client_num, duration_t);
+  }
   return 0;
 }
 
-void GFSClient::BMAddConcurrentWriteClData(int client_number, int duration_ms) {
+void GFSClient::BMAddConcurrentWriteClData(int client_number, int duration) {
   AddConcurrentWriteClDataRequest request;
   request.set_client_number(client_number);
-  request.set_duration_ms(duration_ms);
+  request.set_duration(duration);
   ClientContext context;
   AddConcurrentWriteClDataReply reply;
   stub_bm_->AddConcurrentWriteClData(&context, request, &reply);
-  std::cout << "Send data to BM got reply: " << reply.message();
+  //std::cout << "Send data to BM got reply: " << reply.message();
 }
 
 std::string GFSClient::ClientServerPing(const std::string& user,

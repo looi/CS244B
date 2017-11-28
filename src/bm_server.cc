@@ -27,8 +27,10 @@ class GFSBenchmarkServerImpl final : public GFSBenchmark::Service {
     const AddConcurrentWriteClDataRequest* request,
     AddConcurrentWriteClDataReply* reply) override {
     int client_num = request->client_number();
-    int duration_ms = request->duration_ms();
-    concurrent_write_clientsN_time[client_num].push_back(duration_ms);
+    int duration = request->duration(); // in clock() num of cycles
+    concurrent_write_clientsN_time[client_num].push_back(duration);
+
+    // std::cout << "Got ConcurrentWriteClData: " << client_num << " - " << duration << '\n';
 
     reply->set_message("OK_AddConcurrentWriteClData");
     return Status::OK;

@@ -19,7 +19,7 @@ service GFSBenchmark {
 
 message AddConcurrentWriteClDataRequest {
   int64 client_number = 1;
-  int64 duration_ms = 3;
+  int64 duration = 3;
 }
 
 message AddConcurrentWriteClDataReply {
