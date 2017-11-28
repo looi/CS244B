@@ -20,6 +20,7 @@
 #include <fstream>
 #include <memory>
 #include <inttypes.h>
+#include <csignal>
 
 #include <grpc++/grpc++.h>
 #include <google/protobuf/timestamp.pb.h>
@@ -31,6 +32,8 @@ GFSServiceImpl::GFSServiceImpl(std::string path, std::string server_address,
   this->full_path = path;
   this->location_me = server_address;
   this->version_number = 1;
+  this->am_i_dead = false;
+  this->metadata_file = "metadata" + location_me;
   stub_master = gfs::GFSMaster::NewStub(grpc::CreateChannel
                   (master_address,
                    grpc::InsecureChannelCredentials()));
@@ -247,43 +250,133 @@ Status GFSServiceImpl::PushData(ServerContext* context,
 }
 
 void GFSServiceImpl::ReportChunkInfo(WriteChunkInfo& wc_info) {
-  HeartbeatRequest request;
-  HeartbeatReply reply;
-  ClientContext context;
+  // Acquire the metadata mutex
+  std::lock_guard<std::mutex> guard(metadata_mutex);
 
-  if (metadata.find(wc_info.chunkhandle) != metadata.end()) {
+  // Check if we already have a recent write to the chunkhandle; if not write to
+  // the metadata map
+  if (metadata.find(wc_info.chunkhandle) == metadata.end()) {
+    metadata[wc_info.chunkhandle] = version_number; // TODO: implement version
+  }
+
+  // TODO: We are doing synchronous writes for metadata on every write; Do this
+  // in a background thread instead
+  std::string filename = this->full_path + "/" + \
+                         this->metadata_file;
+
+  std::ofstream outfile(filename.c_str(), std::ios::app | std::ios::binary);
+  if (!outfile.is_open()) {
+    std::cout << "can't open file for writing: " << filename << std::endl;
     return;
   }
-  metadata[wc_info.chunkhandle] = version_number; // TODO: implement version
 
-  auto *chunk_info = request.add_chunks();
-  chunk_info->set_chunkhandle(wc_info.chunkhandle);
-  request.set_location(location_me);
+  outfile << wc_info.chunkhandle << " " << version_number << "\n";
+  outfile.close();
+}
 
-  Status status = stub_master->Heartbeat(&context, request, &reply);
-  if (status.ok()) {
-    std::cout << "New chunkhandle hearbeat sent for: " << wc_info.chunkhandle
+// This function takes the in-memory metadata and sends it over to the Master.
+// If there haven't been any writes in the last interval, it still sends an
+// empty Heartbeat RPC so that the Master knows that the Server is alive
+void GFSServiceImpl::ServerMasterHeartbeat() {
+  int key, value;
+  std::string filename = this->full_path + "/" + \
+                         this->metadata_file;
+  std::ifstream infile(filename.c_str(), std::ios::in | std::ios::binary);
+
+  // At startup, check whether we have a metadata file and populate the metadata
+  // map with it.
+  if (!infile.is_open()) {
+    std::cout << "There's no metadata file for reading: " << filename
               << std::endl;
+  } else {
+    metadata_mutex.lock();
+    while (infile >> key >> value) {
+      metadata[key] = value;
+    }
+    metadata_mutex.unlock();
+    infile.close();
+  }
+
+  while (true) {
+    std::cout << "Heartbeat thread woke up" << std::endl;
+    am_i_dead_mutex.lock();
+    if (am_i_dead) {
+      break;
+    }
+    am_i_dead_mutex.unlock();
+
+    HeartbeatRequest request;
+    HeartbeatReply reply;
+    ClientContext context;
+
+    if (metadata.size() != 0) {
+      // Acquire the metadata mutex
+      metadata_mutex.lock();
+
+      for (auto& ch : metadata) {
+        auto *chunk_info = request.add_chunks();
+        chunk_info->set_chunkhandle(ch.first);
+        std::cout << "chunkhandle metadata: " << ch.first << std::endl;
+      }
+      metadata.clear();
+      metadata_mutex.unlock();
+    }
+    request.set_location(location_me);
+
+    Status status = stub_master->Heartbeat(&context, request, &reply);
+    if (status.ok()) {
+      std::cout << "New chunkhandle hearbeat sent " << std::endl;
+    }
+    std::this_thread::sleep_for(std::chrono::seconds(
+        HEARTBEAT_DURATION_SECONDS));
+  }
+}
+
+//TODO: get rid of global vars
+std::unique_ptr<Server> server;
+GFSServiceImpl *service;
+
+void StartHeartbeat() {
+  service->ServerMasterHeartbeat();
+}
+
+void HandleTerminate(int signal) {
+  if (service) {
+    service->SetAmIDead();
+    // Sleep the HEARTBEAT duration to allow for heartbeat thread to die
+    std::cout << "Going to shut down server in " <<
+              HEARTBEAT_DURATION_SECONDS << "s" << std::endl;
+    std::this_thread::sleep_for(std::chrono::seconds(
+        HEARTBEAT_DURATION_SECONDS));
+  }
+
+  if (server) {
+    std::cout << "Shutting down." << std::endl;
+    server->Shutdown();
   }
 }
 
 void RunServer(std::string master_address, std::string path,
                std::string server_address) {
-  GFSServiceImpl service(path, server_address, master_address);
+  service = new GFSServiceImpl(path, server_address, master_address);
 
   ServerBuilder builder;
   // Listen on the given address without any authentication mechanism.
   builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
   // Register "service" as the instance through which we'll communicate with
   // clients. In this case it corresponds to an *synchronous* service.
-  builder.RegisterService(&service);
+  builder.RegisterService(service);
   // Finally assemble the server.
-  std::unique_ptr<Server> server(builder.BuildAndStart());
+  server = builder.BuildAndStart();
   std::cout << "Server listening on " << server_address << std::endl;
+
+  std::thread heartbeat_thread(StartHeartbeat);
 
   // Wait for the server to shutdown. Note that some other thread must be
   // responsible for shutting down the server for this call to ever return.
   server->Wait();
+  heartbeat_thread.join();
+  delete service;
 }
 
 int main(int argc, char** argv) {
@@ -294,6 +387,9 @@ int main(int argc, char** argv) {
               << std::endl;
     return 1;
   }
+  std::signal(SIGINT, HandleTerminate);
+  std::signal(SIGTERM, HandleTerminate);
+
   RunServer(argv[1], argv[2], argv[3]);
   return 0;
 }
