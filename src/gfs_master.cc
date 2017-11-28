@@ -1,6 +1,9 @@
+#include <algorithm>
 #include <csignal>
+#include <random>
 
 #include "gfs_master.h"
+#include "gfs_common.h"
 
 const char *const DB_INIT_QUERIES[] = {
   // Use Write-Ahead Logging for sqlite (https://sqlite.org/wal.html)
@@ -158,6 +161,40 @@ Status GFSMasterImpl::GetFileLength(ServerContext* context,
   return Status::OK;
 }
 
+Status GFSMasterImpl::Heartbeat(ServerContext* context,
+                                const HeartbeatRequest* request,
+                                HeartbeatReply* response) {
+  std::lock_guard<std::mutex> guard(mutex_);
+  if (!chunk_servers_.count(request->location())) {
+    std::cout << "Found out about new chunkserver: " << request->location() << std::endl;
+  }
+  // Set new lease expiry for chunkserver.
+  chunk_servers_[request->location()].lease_expiry = time(nullptr) + LEASE_DURATION_SECONDS;
+  for (const auto& chunk : request->chunks()) {
+    auto& locations = chunk_locations_[chunk.chunkhandle()];
+    bool already_know = false;
+    for (const auto& location : locations) {
+      if (location.location == request->location()) {
+        already_know = true;
+        break;
+      }
+    }
+    if (!already_know) {
+      // If already_know is false, that means the master crashed and is now
+      // re-learning chunk locations.
+      // For now, the master (first in locations vector) is arbitrarily assigned.
+      // Actually, it should be based on whoever has the highest version.
+      ChunkLocation location;
+      location.location = request->location();
+      location.version = 0; // TODO: implement versions.
+      locations.push_back(location);
+      std::cout << "Found out that chunkserver " << request->location()
+                << " stores chunk " << chunk.chunkhandle() << std::endl;
+    }
+  }
+  return Status::OK;
+}
+
 int64_t GFSMasterImpl::GetFileId(const std::string& filename) {
   sqlite3_stmt *select_file_stmt;
   ThrowIfSqliteFailed(sqlite3_prepare_v2(db_,
@@ -185,8 +222,46 @@ int64_t GFSMasterImpl::GetChunkhandle(int64_t file_id, int64_t chunk_index) {
 }
 
 std::vector<std::string> GFSMasterImpl::GetLocations(int64_t chunkhandle) {
-  // TODO: Replace with non-hardcoded locations
-  return {"127.0.0.1:33333", "127.0.0.1:44444", "127.0.0.1:55555"};
+  std::vector<std::string> result;
+  std::lock_guard<std::mutex> guard(mutex_);
+  auto& locations = chunk_locations_[chunkhandle];
+  if (locations.size() < NUM_CHUNKSERVER_REPLICAS) {
+    if (chunk_servers_.size() >= NUM_CHUNKSERVER_REPLICAS) {
+      // Randomly pick chunkservers to add.
+      std::vector<std::string> all_locations;
+      for (const auto& location : chunk_servers_) {
+        all_locations.push_back(location.first);
+      }
+      std::random_device rd;
+      std::mt19937 gen(rd());
+      std::uniform_int_distribution<> dis(0, chunk_servers_.size() - 1);
+      while (locations.size() < NUM_CHUNKSERVER_REPLICAS) {
+        const std::string& try_location = all_locations[dis(gen)];
+        bool already_in_list = false;
+        for (const auto& location : locations) {
+          if (location.location == try_location) {
+            already_in_list = true;
+            break;
+          }
+        }
+        if (!already_in_list) {
+          ChunkLocation chunk_location;
+          chunk_location.location = try_location;
+          chunk_location.version = 0; // TODO: implement version
+          locations.push_back(chunk_location);
+          std::cout << "Added new location " << try_location
+                    << " for chunkhandle " << chunkhandle << std::endl;
+        }
+      }
+    } else {
+      std::cout << "ERROR: Number of known chunkservers is less than "
+                << NUM_CHUNKSERVER_REPLICAS << std::endl;
+    }
+  }
+  for (const auto& chunk_location : locations) {
+    result.push_back(chunk_location.location);
+  }
+  return result;
 }
 
 void GFSMasterImpl::ThrowIfSqliteFailed(int rc) {

@@ -42,9 +42,7 @@ class GFSMasterImpl final : public GFSMaster::Service {
                        GetFileLengthReply* reply) override;
   Status Heartbeat(ServerContext* context,
                    const HeartbeatRequest* request,
-                   HeartbeatReply* response) {
-    return Status::OK;
-  }
+                   HeartbeatReply* response);
 
  private:
   // Gets file id from SQLite or -1 if does not exist.
@@ -56,4 +54,20 @@ class GFSMasterImpl final : public GFSMaster::Service {
   void ThrowIfSqliteFailed(int rc);
 
   sqlite3 *db_;
+
+  struct ChunkLocation {
+    std::string location; // "ip:port"
+    int64_t version;
+  };
+  // Map from chunkhandle to location.
+  // The first entry in the vector is the primary.
+  std::map<int64_t, std::vector<ChunkLocation>> chunk_locations_;
+
+  struct ChunkServer {
+    time_t lease_expiry;
+  };
+  // Map from "ip:port" to chunkserver info.
+  std::map<std::string, ChunkServer> chunk_servers_;
+
+  std::mutex mutex_;
 };
