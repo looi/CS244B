@@ -8,6 +8,24 @@ import "google/protobuf/timestamp.proto";
 
 package gfs;
 
+// The GFS Benchmark Data CollectingService
+service GFSBenchmark {
+  // Client -> BenchmarkServer RPCs
+  // --------------------------
+
+  // Add a data apir of (client_number, write_time)
+  rpc AddConcurrentWriteClData (AddConcurrentWriteClDataRequest) returns (AddConcurrentWriteClDataReply) {}
+}
+
+message AddConcurrentWriteClDataRequest {
+  int64 client_number = 1;
+  int64 duration_ms = 3;
+}
+
+message AddConcurrentWriteClDataReply {
+  string message = 1;
+}
+
 // The GFS service definition.
 service GFS {
   // Client -> Chunkserver RPCs

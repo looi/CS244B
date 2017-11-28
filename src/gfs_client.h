@@ -13,9 +13,12 @@ using gfs::FindLocationsReply;
 class GFSClient {
  public:
   GFSClient(std::shared_ptr<grpc::Channel> master_channel,
+            std::shared_ptr<grpc::Channel> benchmark_channel,
             int client_id)
     : stub_master_(gfs::GFSMaster::NewStub(master_channel))
+    , stub_bm_(gfs::GFSBenchmark::NewStub(benchmark_channel))
     , client_id_(client_id) {
+      std::cout << "Client initialized with id- " << client_id_ << '\n';
     }
 
   //Client API fucntions
@@ -46,6 +49,9 @@ class GFSClient {
 
   // Appends the byte array to a file. Returns the off-set that the content resides in.
   int Append(char *buf, const std::string& filename);
+
+  // Client functions to report data to Benchmark Server
+  void BMAddConcurrentWriteClData(int client_number, int duration_ms);
 
   // Helper funtions (TODO: might need to move to private)
 
@@ -89,6 +95,7 @@ private:
 
   std::map<std::string, std::unique_ptr<gfs::GFS::Stub>> stub_cs_;
   std::unique_ptr<gfs::GFSMaster::Stub> stub_master_;
+  std::unique_ptr<gfs::GFSBenchmark::Stub> stub_bm_;
   int client_id_;
   std::string primary_;
   std::vector<std::string> chunkservers_;

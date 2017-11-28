@@ -37,7 +37,7 @@ TEMP_PATH = temp
 
 # Actual targets
 
-all: $(BIN_PATH) $(TEMP_PATH) $(BIN_PATH)/gfs_client $(BIN_PATH)/gfs_master $(BIN_PATH)/gfs_server
+all: $(BIN_PATH) $(TEMP_PATH) $(BIN_PATH)/gfs_client $(BIN_PATH)/gfs_master $(BIN_PATH)/gfs_server $(BIN_PATH)/bm_server
 
 $(BIN_PATH)/gfs_client: $(TEMP_PATH)/gfs.pb.o $(TEMP_PATH)/gfs.grpc.pb.o $(TEMP_PATH)/gfs_client.o
 	$(CXX) $(filter %.o,$^) $(LDFLAGS) -o $@
@@ -46,6 +46,9 @@ $(BIN_PATH)/gfs_master: $(TEMP_PATH)/gfs.pb.o $(TEMP_PATH)/gfs.grpc.pb.o $(TEMP_
 	$(CXX) $(filter %.o,$^) $(LDFLAGS) -o $@
 
 $(BIN_PATH)/gfs_server: $(TEMP_PATH)/gfs.pb.o $(TEMP_PATH)/gfs.grpc.pb.o $(TEMP_PATH)/gfs_server.o
+	$(CXX) $(filter %.o,$^) $(LDFLAGS) -o $@
+
+$(BIN_PATH)/bm_server: $(TEMP_PATH)/gfs.pb.o $(TEMP_PATH)/gfs.grpc.pb.o $(TEMP_PATH)/bm_server.o
 	$(CXX) $(filter %.o,$^) $(LDFLAGS) -o $@
 
 # End actual targets
@@ -72,6 +75,9 @@ $(TEMP_PATH)/sqlite3.o: $(SRC_PATH)/sqlite3.c
 	gcc -c -O2 -o $@ $<
 
 $(TEMP_PATH)/%.o: $(SRC_PATH)/%.cc $(SRC_PATH)/%.h $(SRC_PATH)/gfs_common.h
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c -o $@ $<
+
+$(TEMP_PATH)/bm_server.o: $(SRC_PATH)/bm_server.cc $(SRC_PATH)/gfs_common.h
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c -o $@ $<
 
 $(TEMP_PATH)/%.pb.o: $(TEMP_PATH)/%.pb.cc

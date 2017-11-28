@@ -16,6 +16,8 @@
 using grpc::Channel;
 using grpc::ClientContext;
 using grpc::Status;
+using gfs::AddConcurrentWriteClDataRequest;
+using gfs::AddConcurrentWriteClDataReply;
 using gfs::FindLeaseHolderRequest;
 using gfs::FindLeaseHolderReply;
 using gfs::FindLocationsRequest;
@@ -53,6 +55,7 @@ int main(int argc, char** argv) {
   // (use of InsecureChannelCredentials()).
   GFSClient gfs_client(
       grpc::CreateChannel("127.0.0.1:50052", grpc::InsecureChannelCredentials()),
+      grpc::CreateChannel("127.0.0.1:88888", grpc::InsecureChannelCredentials()),
       42); // TODO: chose a better client_id
 
   gfs_client.FindMatchingFiles("a/test");
@@ -60,12 +63,20 @@ int main(int argc, char** argv) {
   Status status = gfs_client.Read(&buf, "a/test0.txt", 0, 10);
   std::cout << "Read status: " << FormatStatus(status)
             << " data: " << buf << std::endl;
+  return 0;
+
+  clock_t benchmark_t;
   for (int i = 0; i < 2; i++) {
     // int length;
     std::string data("new#data" + std::to_string(i));
     std::string filename("a/test" + std::to_string(i) + ".txt");
+    benchmark_t = clock();
     Status status = gfs_client.Write(data, filename, 0);
+    benchmark_t = clock() - benchmark_t;
     std::cout << "Write status: " << FormatStatus(status) << std::endl;
+
+    // Pushing Write data to Benchmark Server
+    gfs_client.BMAddConcurrentWriteClData(1, benchmark_t/(CLOCKS_PER_SEC/1000));
 
     std::string data2;
     status = gfs_client.Read(&data2, filename, 0, data.length());
@@ -75,6 +86,16 @@ int main(int argc, char** argv) {
   }
   gfs_client.FindMatchingFiles("a/test");
   return 0;
+}
+
+void GFSClient::BMAddConcurrentWriteClData(int client_number, int duration_ms) {
+  AddConcurrentWriteClDataRequest request;
+  request.set_client_number(client_number);
+  request.set_duration_ms(duration_ms);
+  ClientContext context;
+  AddConcurrentWriteClDataReply reply;
+  stub_bm_->AddConcurrentWriteClData(&context, request, &reply);
+  std::cout << "Send data to BM got reply: " << reply.message();
 }
 
 std::string GFSClient::ClientServerPing(const std::string& user,
