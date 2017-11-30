@@ -1,5 +1,6 @@
 #include <string>
 #include <mutex>
+#include <thread>
 
 #include <grpc++/grpc++.h>
 #include "gfs.grpc.pb.h"
@@ -81,13 +82,20 @@ public:
 
   void ReportChunkInfo(WriteChunkInfo& wc_info);
 
+  void ServerMasterHeartbeat();
+
+  void SetAmIDead() {
+    am_i_dead = true;
+  }
+
  private:
   std::unique_ptr<gfs::GFSMaster::Stub> stub_master;
   std::string full_path;
   std::string metadata_file;
   std::map<ChunkId, std::string, cmpChunkId> buffercache;
   std::map<int, int> metadata; // int chunkhandle, int version_no
-  std::mutex buffercache_mutex;
+  std::mutex buffercache_mutex, metadata_mutex, am_i_dead_mutex;
   std::string location_me;
   int version_number;
+  bool am_i_dead;
 };
