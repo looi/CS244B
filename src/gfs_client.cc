@@ -8,6 +8,7 @@
 #include <inttypes.h>
 #include <sys/time.h>
 #include <time.h>
+#include <random>
 
 #include <grpc++/grpc++.h>
 #include "gfs.grpc.pb.h"
@@ -155,11 +156,24 @@ Status GFSClient::Read(std::string* buf, const std::string& filename,
   if (!status.ok()) {
     return status;
   }
-  // Pick first returned location
-  const std::string& location = find_locations_reply.locations(0);
-  // TODO: Handle ReadChunk error
-  *buf = ReadChunk(find_locations_reply.chunkhandle(), chunk_offset, length, location);
-  return Status::OK;
+  if (find_locations_reply.locations_size() == 0) {
+    return Status(grpc::NOT_FOUND, "Unable to find replicas for chunk.");
+  }
+  // Keep trying to read from a random chunkserver until successful.
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  std::uniform_int_distribution<> dis(0, find_locations_reply.locations_size() - 1);
+  while (true) {
+    const std::string& location = find_locations_reply.locations(dis(gen));
+    Status status = ReadChunk(find_locations_reply.chunkhandle(), chunk_offset,
+                              length, location, buf);
+    if (status.ok()) {
+      return status;
+    }
+    std::cout << "Tried to read chunkhandle " << find_locations_reply.chunkhandle()
+              << " from " << location << " but read failed with error " << FormatStatus(status)
+              << ". Retrying." << std::endl;
+  }
 }
 
 Status GFSClient::Write(const std::string& buf, const std::string& filename, const int offset) {
@@ -180,8 +194,8 @@ Status GFSClient::Write(const std::string& buf, const std::string& filename, con
   return Status::OK;
 }
 
-std::string GFSClient::ReadChunk(const int chunkhandle, const int offset,
-                                 const int length, const std::string& location) {
+Status GFSClient::ReadChunk(const int chunkhandle, const int offset,
+                            const int length, const std::string& location, std::string *buf) {
   // Data we are sending to the server.
   ReadChunkRequest request;
   request.set_chunkhandle(chunkhandle);
@@ -201,12 +215,14 @@ std::string GFSClient::ReadChunk(const int chunkhandle, const int offset,
   // Act upon its status.
   if (status.ok()) {
     if (reply.bytes_read() == 0) {
-      return "ReadChunk failed";
+      return Status(grpc::NOT_FOUND, "Data not found at chunkserver.");
+    } else if (reply.bytes_read() != length) {
+      std::cout << "Warning: ReadChunk read " << reply.bytes_read() << " bytes but asked for "
+                << length << "." << std::endl;
     }
-    return reply.data();
-  } else {
-    return "RPC failed";
+    *buf = reply.data();
   }
+  return status;
 }
 
 // Client wants to write a chunk at a particular offset. We already have the
