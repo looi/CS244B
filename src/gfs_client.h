@@ -56,8 +56,8 @@ class GFSClient {
   // Helper funtions (TODO: might need to move to private)
 
   // Client ReadChunk implementation
-  std::string ReadChunk(const int chunkhandle, const int offset,
-                        const int length, const std::string& location);
+  Status ReadChunk(const int chunkhandle, const int offset,
+                   const int length, const std::string& location, std::string *buf);
 
   // Client WriteChunk implementation
   std::string WriteChunk(const int chunkhandle, const std::string data,

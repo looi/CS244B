@@ -1,6 +1,7 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <thread>
 #include <inttypes.h>
 
 #include <grpc++/grpc++.h>
@@ -45,20 +46,26 @@ class GFSMasterImpl final : public GFSMaster::Service {
                    HeartbeatReply* response);
 
  private:
+  struct ChunkLocation {
+    std::string location; // "ip:port"
+    int64_t version;
+  };
+
+  // Periodically re-replicates data when chunkservers fail.
+  void RereplicationThread();
   // Gets file id from SQLite or -1 if does not exist.
   int64_t GetFileId(const std::string& filename);
   // Gets chunkhandle from SQLite or -1 if does not exist.
   int64_t GetChunkhandle(int64_t file_id, int64_t chunk_index);
   // Gets locations for chunkhandle. First in the list is primary.
-  std::vector<std::string> GetLocations(int64_t chuknhandle);
+  std::vector<std::string> GetLocations(int64_t chunkhandle,
+                                        bool new_chunk);
+  // Helper function to re-replicate chunk if necessary.
+  void RereplicateChunk(int64_t chunkhandle,
+                        std::vector<ChunkLocation>* locations);
   void ThrowIfSqliteFailed(int rc);
 
   sqlite3 *db_;
-
-  struct ChunkLocation {
-    std::string location; // "ip:port"
-    int64_t version;
-  };
   // Map from chunkhandle to location.
   // The first entry in the vector is the primary.
   std::map<int64_t, std::vector<ChunkLocation>> chunk_locations_;
@@ -70,4 +77,6 @@ class GFSMasterImpl final : public GFSMaster::Service {
   std::map<std::string, ChunkServer> chunk_servers_;
 
   std::mutex mutex_;
+  bool shutdown_ = false;
+  std::thread rereplication_thread_;
 };

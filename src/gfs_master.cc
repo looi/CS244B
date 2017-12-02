@@ -29,9 +29,18 @@ GFSMasterImpl::GFSMasterImpl(std::string sqlite_db_path) {
   for (const char *query : DB_INIT_QUERIES) {
     ThrowIfSqliteFailed(sqlite3_exec(db_, query, nullptr, nullptr, nullptr));
   }
+
+  // Start rereplication thread.
+  rereplication_thread_ = std::thread(std::bind(&GFSMasterImpl::RereplicationThread, this));
 }
 
 GFSMasterImpl::~GFSMasterImpl() {
+  // Signal thread to shutdown.
+  shutdown_ = true;
+
+  // Wait for thread to exit.
+  rereplication_thread_.join();
+
   sqlite3_close(db_);
 }
 
@@ -54,7 +63,10 @@ Status GFSMasterImpl::FindLocations(ServerContext* context,
   }
 
   // Get locations
-  std::vector<std::string> locations = GetLocations(chunkhandle);
+  std::vector<std::string> locations = GetLocations(chunkhandle, false);
+  if (locations.empty()) {
+    return Status(grpc::NOT_FOUND, "Chunk exists but unable to find locations. Probably need to wait for heartbeat from chunkserver.");
+  }
   
   reply->set_chunkhandle(chunkhandle);
   for (const auto& location : locations) {
@@ -99,15 +111,23 @@ Status GFSMasterImpl::FindLeaseHolder(ServerContext* context,
   ThrowIfSqliteFailed(sqlite3_bind_int64(insert_chunk_stmt, 2, chunk_index));
   ThrowIfSqliteFailed(sqlite3_step(insert_chunk_stmt));
   ThrowIfSqliteFailed(sqlite3_finalize(insert_chunk_stmt));
+  bool new_chunk = sqlite3_changes(db_) > 0;
 
   // Get chunkhandle.
   int64_t chunkhandle = GetChunkhandle(file_id, chunk_index);
   if (chunkhandle == -1) {
+    // This should never happen because the chunk was created if necessary.
     return Status(grpc::NOT_FOUND, "Chunk index does not exist.");
+  }
+  if (new_chunk) {
+    std::cout << "Created new chunkhandle " << chunkhandle << std::endl;
   }
 
   // Get locations
-  std::vector<std::string> locations = GetLocations(chunkhandle);
+  std::vector<std::string> locations = GetLocations(chunkhandle, new_chunk);
+  if (locations.empty()) {
+    return Status(grpc::NOT_FOUND, "Chunk exists but unable to find locations. Probably need to wait for heartbeat from chunkserver.");
+  }
   
   reply->set_chunkhandle(chunkhandle);
   for (const auto& location : locations) {
@@ -182,7 +202,7 @@ Status GFSMasterImpl::Heartbeat(ServerContext* context,
     if (!already_know) {
       // If already_know is false, that means the master crashed and is now
       // re-learning chunk locations.
-      // For now, the master (first in locations vector) is arbitrarily assigned.
+      // For now, the primary (first in locations vector) is arbitrarily assigned.
       // Actually, it should be based on whoever has the highest version.
       ChunkLocation location;
       location.location = request->location();
@@ -221,11 +241,24 @@ int64_t GFSMasterImpl::GetChunkhandle(int64_t file_id, int64_t chunk_index) {
   return chunkhandle;
 }
 
-std::vector<std::string> GFSMasterImpl::GetLocations(int64_t chunkhandle) {
+std::vector<std::string> GFSMasterImpl::GetLocations(int64_t chunkhandle,
+                                                     bool new_chunk) {
   std::vector<std::string> result;
   std::lock_guard<std::mutex> guard(mutex_);
   auto& locations = chunk_locations_[chunkhandle];
-  if (locations.size() < NUM_CHUNKSERVER_REPLICAS) {
+  if (new_chunk) {
+    // Only try to re-replicate for a new chunk.
+    RereplicateChunk(chunkhandle, &locations);
+  }
+  for (const auto& chunk_location : locations) {
+    result.push_back(chunk_location.location);
+  }
+  return result;
+}
+
+void GFSMasterImpl::RereplicateChunk(int64_t chunkhandle,
+                                     std::vector<ChunkLocation>* locations) {
+  if (locations->size() < NUM_CHUNKSERVER_REPLICAS) {
     if (chunk_servers_.size() >= NUM_CHUNKSERVER_REPLICAS) {
       // Randomly pick chunkservers to add.
       std::vector<std::string> all_locations;
@@ -235,10 +268,10 @@ std::vector<std::string> GFSMasterImpl::GetLocations(int64_t chunkhandle) {
       std::random_device rd;
       std::mt19937 gen(rd());
       std::uniform_int_distribution<> dis(0, chunk_servers_.size() - 1);
-      while (locations.size() < NUM_CHUNKSERVER_REPLICAS) {
+      while (locations->size() < NUM_CHUNKSERVER_REPLICAS) {
         const std::string& try_location = all_locations[dis(gen)];
         bool already_in_list = false;
-        for (const auto& location : locations) {
+        for (const auto& location : *locations) {
           if (location.location == try_location) {
             already_in_list = true;
             break;
@@ -248,7 +281,7 @@ std::vector<std::string> GFSMasterImpl::GetLocations(int64_t chunkhandle) {
           ChunkLocation chunk_location;
           chunk_location.location = try_location;
           chunk_location.version = 0; // TODO: implement version
-          locations.push_back(chunk_location);
+          locations->push_back(chunk_location);
           std::cout << "Added new location " << try_location
                     << " for chunkhandle " << chunkhandle << std::endl;
         }
@@ -258,15 +291,51 @@ std::vector<std::string> GFSMasterImpl::GetLocations(int64_t chunkhandle) {
                 << NUM_CHUNKSERVER_REPLICAS << std::endl;
     }
   }
-  for (const auto& chunk_location : locations) {
-    result.push_back(chunk_location.location);
-  }
-  return result;
 }
 
 void GFSMasterImpl::ThrowIfSqliteFailed(int rc) {
   if (rc != SQLITE_OK && rc != SQLITE_DONE && rc != SQLITE_ROW) {
     throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+}
+
+void GFSMasterImpl::RereplicationThread() {
+  while (!shutdown_) {
+    {
+      std::lock_guard<std::mutex> guard(mutex_);
+      // Detect failed chunkservers.
+      time_t current_time = time(nullptr);
+      for (auto it = chunk_servers_.begin(); it != chunk_servers_.end(); ) {
+        const std::string& location = it->first;
+        const auto& chunk_server = it->second;
+        if (chunk_server.lease_expiry < current_time) {
+          std::cout << "Lease for chunkserver " << location << " expired." << std::endl;
+          // Forget this chunkserver.
+          it = chunk_servers_.erase(it);
+        } else {
+          // Chunkserver lease is ok.
+          ++it;
+        }
+      }
+
+      // Rereplicate chunks if necessary
+      for (auto& it : chunk_locations_) {
+        int64_t chunkhandle = it.first;
+        auto& locations = it.second;
+        for (auto location = locations.begin(); location != locations.end(); ) {
+          if (chunk_servers_.count(location->location) == 0) {
+            // This chunkserver's lease expired.
+            location = locations.erase(location);
+          } else {
+            ++location;
+          }
+        }
+        RereplicateChunk(chunkhandle, &locations);
+      }
+    }
+
+    // Wait for 1 second, unless shutdown was triggereed.
+    std::this_thread::sleep_for(std::chrono::seconds(1));
   }
 }
  
