@@ -24,6 +24,10 @@ using gfs::PushDataRequest;
 using gfs::PushDataReply;
 using gfs::HeartbeatRequest;
 using gfs::HeartbeatReply;
+using gfs::ReplicateChunksRequest;
+using gfs::ReplicateChunksReply;
+using gfs::CopyChunksRequest;
+using gfs::CopyChunksReply;
 using grpc::Channel;
 using grpc::ClientContext;
 using google::protobuf::Timestamp;
@@ -52,9 +56,11 @@ struct cmpChunkId {
 
 // Logic and data behind the server's behavior.
 class GFSServiceImpl final : public GFS::Service {
-public:
+ public:
   GFSServiceImpl(std::string path, std::string server_address,
                  std::string master_address);
+
+  ~GFSServiceImpl();
 
   Status ClientServerPing(ServerContext* context, const PingRequest* request,
                           PingReply* reply);
@@ -69,7 +75,7 @@ public:
                   PushDataReply* reply);
 
   Status Heartbeat(ServerContext* context, const PushDataRequest* request,
-                  PushDataReply* reply);
+                   PushDataReply* reply);
 
   int PerformLocalWriteChunk(const WriteChunkInfo& wc_info);
 
@@ -80,13 +86,17 @@ public:
                          const SerializedWriteRequest* request,
                          SerializedWriteReply* reply);
 
-  void ReportChunkInfo(WriteChunkInfo& wc_info);
+  Status ReplicateChunks(ServerContext* context,
+                         const ReplicateChunksRequest* request,
+                         ReplicateChunksReply* reply);
+
+  Status CopyChunks(ServerContext* context,
+                    const CopyChunksRequest* request,
+                    CopyChunksReply* reply);
+
+  void ReportChunkInfo(int chunkhandle);
 
   void ServerMasterHeartbeat();
-
-  void SetAmIDead() {
-    am_i_dead = true;
-  }
 
  private:
   std::unique_ptr<gfs::GFSMaster::Stub> stub_master;
@@ -98,4 +108,5 @@ public:
   std::string location_me;
   int version_number;
   bool am_i_dead;
+  std::thread heartbeat_thread;
 };

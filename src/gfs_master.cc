@@ -310,7 +310,6 @@ void GFSMasterImpl::RereplicationThread() {
         const auto& chunk_server = it->second;
         if (chunk_server.lease_expiry < current_time) {
           std::cout << "Lease for chunkserver " << location << " expired." << std::endl;
-          // Forget this chunkserver.
           it = chunk_servers_.erase(it);
         } else {
           // Chunkserver lease is ok.
@@ -330,15 +329,48 @@ void GFSMasterImpl::RereplicationThread() {
             ++location;
           }
         }
-        RereplicateChunk(chunkhandle, &locations);
+        if ((locations.size() < NUM_CHUNKSERVER_REPLICAS) &&
+            (locations.size() > 0)) {
+          int old_size = locations.size();
+          RereplicateChunk(chunkhandle, &locations);
+          int new_size = locations.size();
+
+          std::cout << "chunkhandle[" << chunkhandle <<
+                    "] servers changed from: " << old_size << " to: " <<
+                    new_size << std::endl;
+          if (chunk_servers_.size() >= NUM_CHUNKSERVER_REPLICAS) {
+            assert(new_size > old_size);
+          }
+          for (int i = old_size; i < new_size; i++) {
+            // Copy from locations[0] to locations[i] via ReplicateChunks RPC
+            ReplicateChunksRequest req;
+            ReplicateChunksReply rep;
+            ClientContext cont;
+
+            // Create a connection to replica ChunkServer
+            std::unique_ptr<gfs::GFS::Stub> stub = gfs::GFS::NewStub(
+                grpc::CreateChannel(locations[0].location,
+                                    grpc::InsecureChannelCredentials()));
+            auto *chunk = req.add_chunks();
+            chunk->set_chunkhandle(chunkhandle);
+            req.set_location(locations[i].location);
+
+            Status status = stub->ReplicateChunks(&cont, req, &rep);
+
+            if (status.ok()) {
+              std::cout << "ReplicateChunks request succeeded from: " <<
+                        locations[0].location << " to: " <<
+                        locations[i].location << std::endl;
+            }
+          }
+        }
       }
     }
-
     // Wait for 1 second, unless shutdown was triggereed.
     std::this_thread::sleep_for(std::chrono::seconds(1));
   }
 }
- 
+
 std::unique_ptr<Server> server;
 
 void RunServer(std::string sqlite_db_path) {

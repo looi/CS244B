@@ -49,6 +49,9 @@ GFSServiceImpl::GFSServiceImpl(std::string path, std::string server_address,
   } else {
     std::cout << "Failed to register with master." << std::endl;
   }
+
+  heartbeat_thread = std::thread(std::bind(
+      &GFSServiceImpl::ServerMasterHeartbeat, this));
 }
 
 // Logic and data behind the server's behavior.
@@ -179,7 +182,7 @@ Status GFSServiceImpl::SerializedWrite(ServerContext* context,
   reply->set_bytes_written(bytes_written);
 
   if (bytes_written) {
-    ReportChunkInfo(wc_info);
+    ReportChunkInfo(wc_info.chunkhandle);
   }
 
   return Status::OK;
@@ -220,7 +223,7 @@ Status GFSServiceImpl::WriteChunk(ServerContext* context,
   reply->set_bytes_written(bytes_written);
 
   if (bytes_written) {
-    ReportChunkInfo(wc_info);
+    ReportChunkInfo(wc_info.chunkhandle);
   }
 
   return Status::OK;
@@ -249,14 +252,14 @@ Status GFSServiceImpl::PushData(ServerContext* context,
   return Status::OK;
 }
 
-void GFSServiceImpl::ReportChunkInfo(WriteChunkInfo& wc_info) {
+void GFSServiceImpl::ReportChunkInfo(int chunkhandle) {
   // Acquire the metadata mutex
   std::lock_guard<std::mutex> guard(metadata_mutex);
 
   // Check if we already have a recent write to the chunkhandle; if not write to
   // the metadata map
-  if (metadata.find(wc_info.chunkhandle) == metadata.end()) {
-    metadata[wc_info.chunkhandle] = version_number; // TODO: implement version
+  if (metadata.find(chunkhandle) == metadata.end()) {
+    metadata[chunkhandle] = version_number; // TODO: implement version
   }
 
   // TODO: We are doing synchronous writes for metadata on every write; Do this
@@ -270,7 +273,7 @@ void GFSServiceImpl::ReportChunkInfo(WriteChunkInfo& wc_info) {
     return;
   }
 
-  outfile << wc_info.chunkhandle << " " << version_number << "\n";
+  outfile << chunkhandle << " " << version_number << "\n";
   outfile.close();
 }
 
@@ -327,29 +330,112 @@ void GFSServiceImpl::ServerMasterHeartbeat() {
     if (status.ok()) {
       std::cout << "New chunkhandle hearbeat sent " << std::endl;
     }
-    std::this_thread::sleep_for(std::chrono::seconds(
-        HEARTBEAT_DURATION_SECONDS));
+    std::this_thread::sleep_for(std::chrono::seconds(1));
   }
 }
 
-//TODO: get rid of global vars
-std::unique_ptr<Server> server;
-GFSServiceImpl *service;
+// ReplicateChunks is an RPC sent by Master to Chunkserver to send chunkhandles
+// to another Chunkserver as part of re-replication
+Status GFSServiceImpl::ReplicateChunks(ServerContext* context,
+                                  const ReplicateChunksRequest* request,
+                                  ReplicateChunksReply* reply) {
+  //  std::lock_guard<std::mutex> guard(mutex);
+  std::string location = request->location();
+  std::cout << "Got replication request to location: " << request->location()
+            << std::endl;
 
-void StartHeartbeat() {
-  service->ServerMasterHeartbeat();
+  CopyChunksRequest req;
+  CopyChunksReply rep;
+  ClientContext cont;
+
+  // Create CopyChunksRequest -- (chunkhandle, data)
+  for (const auto& chunk : request->chunks()) {
+    // Read data from chunk.chunkhandle()
+    std::string filename = this->full_path + "/" + \
+                           std::to_string(chunk.chunkhandle());
+    std::ifstream infile(filename.c_str(), std::ios::in | std::ios::binary);
+    if (!infile.is_open()) {
+      std::cout << "can't open file for reading: " << filename << std::endl;
+    } else {
+      infile.seekg(0, std::ios::end);
+      int length = infile.tellg();
+      infile.seekg(0, std::ios::beg);
+
+      std::string data(length, ' ');
+      infile.read(&data[0], length);
+      if (infile.gcount() != length) {
+        std::cout << "couldn't read " << length << " bytes out of " <<
+                  chunk.chunkhandle() << std::endl;
+      }
+      infile.close();
+      auto *chunk_info = req.add_chunks();
+      chunk_info->set_chunkhandle(chunk.chunkhandle());
+      chunk_info->set_data(data);
+      std::cout << "added chunk_info for " << chunk.chunkhandle() <<
+                " and data: " << data << std::endl;
+    }
+  }
+
+  // Create a connection to replica ChunkServer
+  std::unique_ptr<gfs::GFS::Stub> stub = gfs::GFS::NewStub(
+      grpc::CreateChannel(location, grpc::InsecureChannelCredentials()));
+
+  Status status = stub->CopyChunks(&cont, req, &rep);
+
+  if (status.ok()) {
+    std::cout << "Copy request succeeded from: " << location_me << " to: " <<
+              location << std::endl;
+    return Status::OK;
+  } else {
+    std::cout << "Copy request failed from: " << location_me << " to: " <<
+              location << std::endl;
+    return Status(grpc::INTERNAL, "CopyRequest failed to backup replica.");
+  }
 }
+
+Status GFSServiceImpl::CopyChunks(ServerContext* context,
+                                  const CopyChunksRequest* request,
+                                  CopyChunksReply* reply) {
+  // Directly write to disk and add it to ReportChunkInfo so that master is sent
+  // this info in the next Heartbeat
+  for (const auto& chunk : request->chunks()) {
+    std::string filename = this->full_path + "/" + \
+                           std::to_string(chunk.chunkhandle());
+    std::string data = chunk.data();
+    int length = data.length();
+
+    if ((length >= CHUNK_SIZE_IN_BYTES)) {
+      std::cout << "Write exceeds chunk size: " << length << std::endl;
+      return Status(grpc::FAILED_PRECONDITION, "Write length > CHUNK_SIZE");
+    }
+
+    std::ofstream outfile(filename.c_str(), std::ios::out | std::ios::binary);
+    if (!outfile.is_open()) {
+      std::cout << "can't open file for writing: " << filename << std::endl;
+      return Status(grpc::NOT_FOUND, "Can't open file for writing");
+    } else {
+      outfile.seekp(0, std::ios::beg);
+      outfile.write(data.c_str(), length);
+      outfile.close();
+    }
+    ReportChunkInfo(chunk.chunkhandle());
+  }
+  return Status::OK;
+}
+
+GFSServiceImpl::~GFSServiceImpl() {
+  // Signal thread to shutdown.
+  am_i_dead_mutex.lock();
+  am_i_dead = true;
+  am_i_dead_mutex.unlock();
+
+  // Wait for thread to exit.
+  heartbeat_thread.join();
+}
+
+std::unique_ptr<Server> server;
 
 void HandleTerminate(int signal) {
-  if (service) {
-    service->SetAmIDead();
-    // Sleep the HEARTBEAT duration to allow for heartbeat thread to die
-    std::cout << "Going to shut down server in " <<
-              HEARTBEAT_DURATION_SECONDS << "s" << std::endl;
-    std::this_thread::sleep_for(std::chrono::seconds(
-        HEARTBEAT_DURATION_SECONDS));
-  }
-
   if (server) {
     std::cout << "Shutting down." << std::endl;
     server->Shutdown();
@@ -358,25 +444,21 @@ void HandleTerminate(int signal) {
 
 void RunServer(std::string master_address, std::string path,
                std::string server_address) {
-  service = new GFSServiceImpl(path, server_address, master_address);
+  GFSServiceImpl service(path, server_address, master_address);
 
   ServerBuilder builder;
   // Listen on the given address without any authentication mechanism.
   builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
   // Register "service" as the instance through which we'll communicate with
   // clients. In this case it corresponds to an *synchronous* service.
-  builder.RegisterService(service);
+  builder.RegisterService(&service);
   // Finally assemble the server.
   server = builder.BuildAndStart();
   std::cout << "Server listening on " << server_address << std::endl;
 
-  std::thread heartbeat_thread(StartHeartbeat);
-
   // Wait for the server to shutdown. Note that some other thread must be
   // responsible for shutting down the server for this call to ever return.
   server->Wait();
-  heartbeat_thread.join();
-  delete service;
 }
 
 int main(int argc, char** argv) {

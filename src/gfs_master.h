@@ -23,6 +23,11 @@ using gfs::GetFileLengthRequest;
 using gfs::GetFileLengthReply;
 using gfs::HeartbeatRequest;
 using gfs::HeartbeatReply;
+using gfs::ReplicateChunksRequest;
+using gfs::ReplicateChunksReply;
+using gfs::GFS;
+using grpc::Channel;
+using grpc::ClientContext;
 
 // Logic and data behind the server's behavior.
 class GFSMasterImpl final : public GFSMaster::Service {
