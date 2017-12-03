@@ -44,6 +44,7 @@ service GFS {
 
   // Master -> Chunkserver RPCs
   // --------------------------
+  rpc ReplicateChunks (ReplicateChunksRequest) returns (ReplicateChunksReply) {}
 
   // Delete chunks when master knows it is no longer needed.
   rpc DeleteChunks (DeleteChunksRequest) returns (DeleteChunksReply) {}
@@ -53,6 +54,9 @@ service GFS {
 
   // SerializedWrite from primary to replica ChunkServers
   rpc SerializedWrite (SerializedWriteRequest) returns (SerializedWriteReply) {}
+
+  // CopyChunks from one replica to a new replica ChunkServer
+  rpc CopyChunks (CopyChunksRequest) returns (CopyChunksReply) {}
 }
 
 // The request message containing the user's name.
@@ -116,6 +120,21 @@ message PushDataRequest {
 message PushDataReply {
 }
 
+message ReplicateChunksRequest {
+  message ChunkInfo {
+    int64 chunkhandle = 1;
+    // TODO int64 version = 2;
+  }
+  // All chunks to replicate to location.
+  repeated ChunkInfo chunks = 1;
+  // The location is a string "IP:port" like "127.0.0.1:12345".
+  // - It should be the location of a new ChunkServer to replicate data to
+  string location = 2;
+}
+
+// Status returned will be OK (or a network error).
+message ReplicateChunksReply {}
+
 message DeleteChunksRequest {
   // List of chunkhandles to delete.
   repeated int64 chunkhandles = 1;
@@ -123,10 +142,23 @@ message DeleteChunksRequest {
 
 message DeleteChunksReply {}
 
+message CopyChunksRequest {
+  message ChunkInfo {
+    int64 chunkhandle = 1;
+    string data = 2;
+    // TODO int64 version = 3;
+  }
+  // All chunks to copy.
+  repeated ChunkInfo chunks = 1;
+}
+
+// Status returned will be OK (or a network error).
+message CopyChunksReply {}
+
 service GFSMaster {
   // Client -> Master RPCs
   // ---------------------
-    
+ 
   // List all files with filename matching a certain prefix.
   // - Directories are part of the filename, e.g. "abc/def/ghi.txt"
   rpc FindMatchingFiles (FindMatchingFilesRequest) returns (FindMatchingFilesReply) {}
