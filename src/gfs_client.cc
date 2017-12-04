@@ -51,14 +51,14 @@ int main(int argc, char* argv[]) {
       (strcmp(argv[3], "-m") == 0 || strcmp(argv[3], "--mode"))) {
     if (strcmp(argv[4], "SIMPLE") == 0) {
       std::cout << "Running client in SIMPLE mode" << std::endl;
-      RunCLientSimple();
+      RunCLientSimple(argc, argv);
       return 0;
     } else if (strcmp(argv[4], "COMMAND") == 0) {
       std::cout << "Running client in COMMAND mode" << std::endl;
-      RunClientCommand();
+      RunClientCommand(argc, argv);
       return 0;
     } else if (strcmp(argv[4], "BENCHMARK") == 0) {
-      RunClientBenchmark();
+      RunClientBenchmark(argc, argv);
       return 0;
     }
   }
