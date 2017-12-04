@@ -39,24 +39,129 @@ using gfs::GFS;
 using gfs::GFSMaster;
 using google::protobuf::Timestamp;
 
-std::string FormatStatus(const Status& status) {
-  if (status.ok()) {
-    return "OK";
-  }
-  std::ostringstream ss;
-  ss << "(" << status.error_code() << ": " << status.error_message() << ")";
-  return ss.str();
-}
+std::string FormatStatus(const Status& status);
+
+void RunCLientSimple();
+void RunClientCommand();
+void RunClientBenchmark();
 
 // Client's main function
-int main(int argc, char** argv) {
+int main(int argc, char* argv[]) {
+  if (argc >= 3 &&
+      (strcmp(argv[1], "-m") == 0 || strcmp(argv[1], "--mode"))) {
+    if (strcmp(argv[2], "SIMPLE") == 0) {
+      std::cout << "Running client in SIMPLE mode" << std::endl;
+      RunCLientSimple();
+      return 0;
+    } else if (strcmp(argv[2], "COMMAND") == 0) {
+      std::cout << "Running client in COMMAND mode" << std::endl;
+      RunClientCommand();
+      return 0;
+    } else if (strcmp(argv[2], "BENCHMARK") == 0) {
+      RunClientBenchmark();
+      return 0;
+    }
+  }
+  
+  std::cout << "Usage: " << argv[0] << " <option> ARGUEMENT"
+            << "Options:\n"
+            << "\t-h,--help\t\tShow this help message\n"
+            << "\t-m,--mode MODE\tSpecify the client mode,"
+            << " options are: SIMPLE, COMMAND, BENCHMARK"
+            << std::endl;
+  return 0;
+}
+
+// Helper functions of client main functions
+
+void RunClientCommand() {
   // Instantiate the client. It requires a channel, out of which the actual RPCs
   // are created. This channel models a connection to an endpoint (in this case,
   // localhost at port 50051). We indicate that the channel isn't authenticated
   // (use of InsecureChannelCredentials()).
   GFSClient gfs_client(
       grpc::CreateChannel("127.0.0.1:50052", grpc::InsecureChannelCredentials()),
-      grpc::CreateChannel("127.0.0.1:88888", grpc::InsecureChannelCredentials()),
+      grpc::CreateChannel("127.0.0.1:8888", grpc::InsecureChannelCredentials()),
+      42); // TODO: chose a better client_id
+
+  std::cout << "Usage: <command> <arg1> <arg2> <arg3>...\n"
+            << "Options:\n"
+            << "\tread\t<filepath>\t<offset>\t<length>\n"
+            << "\twrite\t<filepath>\t<offset>\t<data>\n"
+            << "\tquit"
+            << std::endl;
+  
+  bool running = true;
+  while (running) {
+    std::string cmd;
+    std::cin >> cmd;
+    if (cmd == "read") {
+      std::string filepath;
+      int offset, length;
+      std::cin >> filepath >> offset >> length;
+
+      std::string buf;
+      Status status = gfs_client.Read(&buf, filepath, offset, length);
+      std::cout << "Read status: " << FormatStatus(status)
+                << " data: " << buf << std::endl;
+    } else if (cmd == "write") {
+      std::string filepath, data;
+      int offset;
+      std::cin >> filepath >> offset >> data;
+
+      Status status = gfs_client.Write(data, filepath, offset);
+      std::cout << "Write status: " << FormatStatus(status) << std::endl;
+    } else if (cmd == "quit") {
+      running = false;
+    }
+  }
+}
+
+void RunClientBenchmark() {
+  // Instantiate the client. It requires a channel, out of which the actual RPCs
+  // are created. This channel models a connection to an endpoint (in this case,
+  // localhost at port 50051). We indicate that the channel isn't authenticated
+  // (use of InsecureChannelCredentials()).
+  GFSClient gfs_client(
+      grpc::CreateChannel("127.0.0.1:50052", grpc::InsecureChannelCredentials()),
+      grpc::CreateChannel("127.0.0.1:8888", grpc::InsecureChannelCredentials()),
+      42); // TODO: chose a better client_id
+
+  const clock_t kWarmUpTime = 5 * CLOCKS_PER_SEC;
+  const clock_t kTotalRuntime = 10 * CLOCKS_PER_SEC;
+
+  // Parameters for Continuous write bench mark
+  int write_offset = 0;
+  const int kOffsetIncrement = 64;
+  std::string bm_filename = "a/benchmark.txt";
+  std::string bm_data(kOffsetIncrement, 'x');
+
+  clock_t benchmark_start_t, duration_t;
+  benchmark_start_t = clock();
+  while (clock() - benchmark_start_t < kWarmUpTime + kTotalRuntime) {
+    duration_t = clock();
+    Status status = gfs_client.Write(bm_data, bm_filename, write_offset);
+    duration_t = clock() - duration_t;
+    //TODO: maybe add it to Write rpc??
+    int client_num = 1;
+
+    if (clock() - benchmark_start_t > kWarmUpTime) {
+      // Pushing stats data to Benchmark Server after warm-up
+      gfs_client.BMAddConcurrentWriteClData(client_num, duration_t);
+    }
+
+    write_offset += kOffsetIncrement;
+  }
+}
+
+void RunCLientSimple() {
+  // Instantiate the client. It requires a channel, out of which the actual RPCs
+  // are created. This channel models a connection to an endpoint (in this case,
+  // localhost at port 50051). We indicate that the channel isn't authenticated
+  // (use of InsecureChannelCredentials()).
+  GFSClient gfs_client(
+      grpc::CreateChannel("127.0.0.1:50052", grpc::InsecureChannelCredentials()),
+      grpc::CreateChannel("127.0.0.1:8888", grpc::InsecureChannelCredentials()),
       42); // TODO: chose a better client_id
 
   gfs_client.FindMatchingFiles("a/test");
@@ -80,36 +185,18 @@ int main(int argc, char** argv) {
     gfs_client.GetFileLength(filename);
   }
   gfs_client.FindMatchingFiles("a/test");
-
-  ////////////////////////////////////////////////////
-  // Concurrent write benchmark main function part. //
-  ////////////////////////////////////////////////////
-  // Create a file and make it large enough to use
-  std::string bm_filename = "a/bench_concurrent_write_dif_client_num";
-  char bm_data[] = "some#data#to#write";
-  // const int kWriteFileChunckNum = 1000;
-  // const int kWriteFileLen = kWriteFileChunckNum * CHUNK_SIZE_IN_BYTES;
-  // gfs_client.Create(filename);
-  // for (int i = 0; i < kWriteFileChunckNum; i++) {
-  //   gfs_client.Append(data, filename);
-  // }
-  clock_t benchmark_start_t, duration_t;
-  benchmark_start_t = clock();
-  while ((clock() - benchmark_start_t)/CLOCKS_PER_SEC < 20) {
-    // TODO: replace it with a randomly generated number x (0<=x<kWriteFileChunckNum)
-    int write_offset = 0;
-    
-    duration_t = clock();
-    Status status = gfs_client.Write(bm_data, bm_filename, write_offset);
-    duration_t = clock() - duration_t;
-    //TODO: maybe add it to Write rpc??
-    int client_num = 1;
-
-    // Pushing Write data to Benchmark Server
-    gfs_client.BMAddConcurrentWriteClData(client_num, duration_t);
-  }
-  return 0;
 }
+
+std::string FormatStatus(const Status& status) {
+  if (status.ok()) {
+    return "OK";
+  }
+  std::ostringstream ss;
+  ss << "(" << status.error_code() << ": " << status.error_message() << ")";
+  return ss.str();
+}
+
+// Client class member function implimentation
 
 void GFSClient::BMAddConcurrentWriteClData(int client_number, int duration) {
   AddConcurrentWriteClDataRequest request;
