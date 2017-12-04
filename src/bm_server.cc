@@ -30,7 +30,7 @@ class GFSBenchmarkServerImpl final : public GFSBenchmark::Service {
     int duration = request->duration(); // in clock() num of cycles
     concurrent_write_clientsN_time[client_num].push_back(duration);
 
-    // std::cout << "Got ConcurrentWriteClData: " << client_num << " - " << duration << '\n';
+    std::cout << "Got ConcurrentWriteClData: " << client_num << " - " << duration << '\n';
 
     reply->set_message("OK_AddConcurrentWriteClData");
     return Status::OK;
@@ -46,7 +46,7 @@ class GFSBenchmarkServerImpl final : public GFSBenchmark::Service {
 };
 
 int main(int argc, char** argv) {
-  std::string server_address("127.0.0.1:88888");
+  std::string server_address("127.0.0.1:8888");
   GFSBenchmarkServerImpl service;
 
   ServerBuilder builder;
