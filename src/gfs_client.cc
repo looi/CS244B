@@ -41,29 +41,30 @@ using google::protobuf::Timestamp;
 
 std::string FormatStatus(const Status& status);
 
-void RunCLientSimple();
-void RunClientCommand();
-void RunClientBenchmark();
+void RunCLientSimple(int argc, char* argv[]);
+void RunClientCommand(int argc, char* argv[]);
+void RunClientBenchmark(int argc, char* argv[]);
 
 // Client's main function
 int main(int argc, char* argv[]) {
-  if (argc >= 3 &&
-      (strcmp(argv[1], "-m") == 0 || strcmp(argv[1], "--mode"))) {
-    if (strcmp(argv[2], "SIMPLE") == 0) {
+  if (argc >= 5 &&
+      (strcmp(argv[3], "-m") == 0 || strcmp(argv[3], "--mode"))) {
+    if (strcmp(argv[4], "SIMPLE") == 0) {
       std::cout << "Running client in SIMPLE mode" << std::endl;
       RunCLientSimple();
       return 0;
-    } else if (strcmp(argv[2], "COMMAND") == 0) {
+    } else if (strcmp(argv[4], "COMMAND") == 0) {
       std::cout << "Running client in COMMAND mode" << std::endl;
       RunClientCommand();
       return 0;
-    } else if (strcmp(argv[2], "BENCHMARK") == 0) {
+    } else if (strcmp(argv[4], "BENCHMARK") == 0) {
       RunClientBenchmark();
       return 0;
     }
   }
   
-  std::cout << "Usage: " << argv[0] << " <option> ARGUEMENT"
+  std::cout << "Usage: " << argv[0] << " <master_location> <benchmark_location> <option> ARGUEMENT\n"
+            << "Locations like IP:port"
             << "Options:\n"
             << "\t-h,--help\t\tShow this help message\n"
             << "\t-m,--mode MODE\tSpecify the client mode,"
@@ -74,14 +75,14 @@ int main(int argc, char* argv[]) {
 
 // Helper functions of client main functions
 
-void RunClientCommand() {
+void RunClientCommand(int argc, char* argv[]) {
   // Instantiate the client. It requires a channel, out of which the actual RPCs
   // are created. This channel models a connection to an endpoint (in this case,
   // localhost at port 50051). We indicate that the channel isn't authenticated
   // (use of InsecureChannelCredentials()).
   GFSClient gfs_client(
-      grpc::CreateChannel("127.0.0.1:50052", grpc::InsecureChannelCredentials()),
-      grpc::CreateChannel("127.0.0.1:8888", grpc::InsecureChannelCredentials()),
+      grpc::CreateChannel(argv[1], grpc::InsecureChannelCredentials()),
+      grpc::CreateChannel(argv[2], grpc::InsecureChannelCredentials()),
       42); // TODO: chose a better client_id
 
   std::cout << "Usage: <command> <arg1> <arg2> <arg3>...\n"
@@ -117,14 +118,14 @@ void RunClientCommand() {
   }
 }
 
-void RunClientBenchmark() {
+void RunClientBenchmark(int argc, char* argv[]) {
   // Instantiate the client. It requires a channel, out of which the actual RPCs
   // are created. This channel models a connection to an endpoint (in this case,
   // localhost at port 50051). We indicate that the channel isn't authenticated
   // (use of InsecureChannelCredentials()).
   GFSClient gfs_client(
-      grpc::CreateChannel("127.0.0.1:50052", grpc::InsecureChannelCredentials()),
-      grpc::CreateChannel("127.0.0.1:8888", grpc::InsecureChannelCredentials()),
+      grpc::CreateChannel(argv[1], grpc::InsecureChannelCredentials()),
+      grpc::CreateChannel(argv[2], grpc::InsecureChannelCredentials()),
       42); // TODO: chose a better client_id
 
   const clock_t kWarmUpTime = 5 * CLOCKS_PER_SEC;
@@ -154,14 +155,14 @@ void RunClientBenchmark() {
   }
 }
 
-void RunCLientSimple() {
+void RunCLientSimple(int argc, char* argv[]) {
   // Instantiate the client. It requires a channel, out of which the actual RPCs
   // are created. This channel models a connection to an endpoint (in this case,
   // localhost at port 50051). We indicate that the channel isn't authenticated
   // (use of InsecureChannelCredentials()).
   GFSClient gfs_client(
-      grpc::CreateChannel("127.0.0.1:50052", grpc::InsecureChannelCredentials()),
-      grpc::CreateChannel("127.0.0.1:8888", grpc::InsecureChannelCredentials()),
+      grpc::CreateChannel(argv[1], grpc::InsecureChannelCredentials()),
+      grpc::CreateChannel(argv[2], grpc::InsecureChannelCredentials()),
       42); // TODO: chose a better client_id
 
   gfs_client.FindMatchingFiles("a/test");
