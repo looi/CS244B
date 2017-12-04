@@ -373,8 +373,8 @@ void GFSMasterImpl::RereplicationThread() {
 
 std::unique_ptr<Server> server;
 
-void RunServer(std::string sqlite_db_path) {
-  std::string server_address("127.0.0.1:50052");
+void RunServer(std::string sqlite_db_path, std::string master_address) {
+  std::string server_address(master_address);
   GFSMasterImpl service(sqlite_db_path);
 
   ServerBuilder builder;
@@ -400,14 +400,14 @@ void HandleTerminate(int signal) {
 }
 
 int main(int argc, char** argv) {
-  if (argc != 2) {
-    std::cout << "Usage: gfs_master path_to_sqlite_database" << std::endl;
+  if (argc != 3) {
+    std::cout << "Usage: gfs_master path_to_sqlite_database master_address(IP:port)" << std::endl;
     return 1;
   }
 
   std::signal(SIGINT, HandleTerminate);
   std::signal(SIGTERM, HandleTerminate);
-  RunServer(argv[1]);
+  RunServer(argv[1], argv[2]);
 
   return 0;
 }
