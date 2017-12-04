@@ -50,13 +50,20 @@ std::string FormatStatus(const Status& status) {
 
 // Client's main function
 int main(int argc, char** argv) {
+  if (argc != 3) {
+    std::cout << "Usage: ./gfs_client master_address (like IP:port) \
+              bmserver_address (like IP:port)"
+              << std::endl;
+    return 1;
+  }
+
   // Instantiate the client. It requires a channel, out of which the actual RPCs
   // are created. This channel models a connection to an endpoint (in this case,
   // localhost at port 50051). We indicate that the channel isn't authenticated
   // (use of InsecureChannelCredentials()).
   GFSClient gfs_client(
-      grpc::CreateChannel("127.0.0.1:50052", grpc::InsecureChannelCredentials()),
-      grpc::CreateChannel("127.0.0.1:88888", grpc::InsecureChannelCredentials()),
+      grpc::CreateChannel(argv[1], grpc::InsecureChannelCredentials()),
+      grpc::CreateChannel(argv[2], grpc::InsecureChannelCredentials()),
       42); // TODO: chose a better client_id
 
   gfs_client.FindMatchingFiles("a/test");
