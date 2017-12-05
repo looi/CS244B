@@ -328,7 +328,7 @@ void GFSServiceImpl::ServerMasterHeartbeat() {
     if (status.ok()) {
       std::cout << "New chunkhandle hearbeat sent " << std::endl;
     }
-    std::this_thread::sleep_for(std::chrono::seconds(1));
+    std::this_thread::sleep_for(std::chrono::seconds(HEARTBEAT_DURATION_SECONDS));
   }
 }
 

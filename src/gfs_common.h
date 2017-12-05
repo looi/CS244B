@@ -49,7 +49,11 @@ using grpc::Status;
 
 #define CHUNK_SIZE_IN_BYTES (64 * (1 << 20)) // 64MiB
 #define NUM_CHUNKSERVER_REPLICAS 3
+
+// Time before chunkserver lease expires at the master.
 #define LEASE_DURATION_SECONDS 10
+
+// Duration between heartbeats at chunkserver.
 #define HEARTBEAT_DURATION_SECONDS 2
 
 std::string FormatStatus(const Status& status);
