@@ -421,6 +421,16 @@ Status GFSServiceImpl::CopyChunks(ServerContext* context,
   return Status::OK;
 }
 
+Status GFSServiceImpl::DeleteChunks(ServerContext* context,
+                                    const DeleteChunksRequest* request,
+                                    DeleteChunksReply* reply) {
+  for (int64_t chunkhandle : request->chunkhandles()) {
+    // TODO: Actually perform deletion.
+    std::cout << "Got DeleteChunks request for " << chunkhandle << std::endl;
+  }
+  return Status(grpc::UNIMPLEMENTED, "Not implemented.");
+}
+
 GFSServiceImpl::~GFSServiceImpl() {
   // Signal thread to shutdown.
   am_i_dead_mutex.lock();

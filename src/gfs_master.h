@@ -4,30 +4,8 @@
 #include <thread>
 #include <inttypes.h>
 
-#include <grpc++/grpc++.h>
-#include "gfs.grpc.pb.h"
 #include "sqlite3.h"
-
-using grpc::Server;
-using grpc::ServerBuilder;
-using grpc::ServerContext;
-using grpc::Status;
-using gfs::FindLeaseHolderRequest;
-using gfs::FindLeaseHolderReply;
-using gfs::FindLocationsRequest;
-using gfs::FindLocationsReply;
-using gfs::GFSMaster;
-using gfs::FindMatchingFilesRequest;
-using gfs::FindMatchingFilesReply;
-using gfs::GetFileLengthRequest;
-using gfs::GetFileLengthReply;
-using gfs::HeartbeatRequest;
-using gfs::HeartbeatReply;
-using gfs::ReplicateChunksRequest;
-using gfs::ReplicateChunksReply;
-using gfs::GFS;
-using grpc::Channel;
-using grpc::ClientContext;
+#include "gfs_common.h"
 
 // Logic and data behind the server's behavior.
 class GFSMasterImpl final : public GFSMaster::Service {
@@ -46,9 +24,15 @@ class GFSMasterImpl final : public GFSMaster::Service {
   Status GetFileLength(ServerContext* context,
                        const GetFileLengthRequest* request,
                        GetFileLengthReply* reply) override;
+  Status MoveFile(ServerContext* context,
+                  const MoveFileRequest* request,
+                  MoveFileReply* reply) override;
+  Status DeleteFile(ServerContext* context,
+                    const DeleteFileRequest* request,
+                    DeleteFileReply* reply) override;
   Status Heartbeat(ServerContext* context,
                    const HeartbeatRequest* request,
-                   HeartbeatReply* response);
+                   HeartbeatReply* response) override;
 
  private:
   struct ChunkLocation {
@@ -58,6 +42,8 @@ class GFSMasterImpl final : public GFSMaster::Service {
 
   // Periodically re-replicates data when chunkservers fail.
   void RereplicationThread();
+  // Gets all chunkhandles from SQLite.
+  std::set<int64_t> GetAllChunkhandlesFromDb();
   // Gets file id from SQLite or -1 if does not exist.
   int64_t GetFileId(const std::string& filename);
   // Gets chunkhandle from SQLite or -1 if does not exist.
@@ -77,6 +63,7 @@ class GFSMasterImpl final : public GFSMaster::Service {
 
   struct ChunkServer {
     time_t lease_expiry;
+    std::unique_ptr<gfs::GFS::Stub> stub;
   };
   // Map from "ip:port" to chunkserver info.
   std::map<std::string, ChunkServer> chunk_servers_;

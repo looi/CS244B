@@ -1,5 +1,4 @@
 #include "gfs_client.h"
-#include "gfs_common.h"
 
 #include <iostream>
 #include <memory>
@@ -38,8 +37,6 @@ using gfs::PushDataReply;
 using gfs::GFS;
 using gfs::GFSMaster;
 using google::protobuf::Timestamp;
-
-std::string FormatStatus(const Status& status);
 
 void RunCLientSimple(int argc, char* argv[]);
 void RunClientCommand(int argc, char* argv[]);
@@ -89,32 +86,66 @@ void RunClientCommand(int argc, char* argv[]) {
             << "Options:\n"
             << "\tread\t<filepath>\t<offset>\t<length>\n"
             << "\twrite\t<filepath>\t<offset>\t<data>\n"
+            << "\tls\t<prefix>\n"
+            << "\tmv\t<filepath>\t<new_filepath>\n"
+            << "\trm\t<filepath>\n"
             << "\tquit"
             << std::endl;
   
-  bool running = true;
-  while (running) {
+  while (true) {
+    std::cout << "> ";
+    // Read an entire line and then read tokens from the line.
+    std::string line;
+    std::getline(std::cin, line);
+    std::istringstream line_stream(line);
+
     std::string cmd;
-    std::cin >> cmd;
+    line_stream >> cmd;
     if (cmd == "read") {
       std::string filepath;
       int offset, length;
-      std::cin >> filepath >> offset >> length;
-
-      std::string buf;
-      Status status = gfs_client.Read(&buf, filepath, offset, length);
-      std::cout << "Read status: " << FormatStatus(status)
-                << " data: " << buf << std::endl;
+      if (line_stream >> filepath >> offset >> length) {
+        std::string buf;
+        Status status = gfs_client.Read(&buf, filepath, offset, length);
+        std::cout << "Read status: " << FormatStatus(status)
+                  << " data: " << buf << std::endl;
+        continue;
+      }
     } else if (cmd == "write") {
       std::string filepath, data;
       int offset;
-      std::cin >> filepath >> offset >> data;
-
-      Status status = gfs_client.Write(data, filepath, offset);
-      std::cout << "Write status: " << FormatStatus(status) << std::endl;
+      if (line_stream >> filepath >> offset >> data) {
+        Status status = gfs_client.Write(data, filepath, offset);
+        std::cout << "Write status: " << FormatStatus(status) << std::endl;
+        continue;
+      }
+    } else if (cmd == "ls") {
+      std::string prefix;
+      if (line_stream >> prefix) {
+        gfs_client.FindMatchingFiles(prefix);
+      } else {
+        // No prefix given, list all files.
+        gfs_client.FindMatchingFiles("");
+      }
+      continue;
+    } else if (cmd == "mv") {
+      std::string old_filename, new_filename;
+      if (line_stream >> old_filename >> new_filename) {
+        Status status = gfs_client.Move(old_filename, new_filename);
+        std::cout << "Move status: " << FormatStatus(status) << std::endl;
+        continue;
+      }
+    } else if (cmd == "rm") {
+      std::string filename;
+      if (line_stream >> filename) {
+        Status status = gfs_client.Delete(filename);
+        std::cout << "Delete status: " << FormatStatus(status) << std::endl;
+        continue;
+      }
     } else if (cmd == "quit") {
-      running = false;
+      break;
     }
+    std::cout << "Invalid command." << std::endl;
   }
 }
 
@@ -188,15 +219,6 @@ void RunCLientSimple(int argc, char* argv[]) {
   gfs_client.FindMatchingFiles("a/test");
 }
 
-std::string FormatStatus(const Status& status) {
-  if (status.ok()) {
-    return "OK";
-  }
-  std::ostringstream ss;
-  ss << "(" << status.error_code() << ": " << status.error_message() << ")";
-  return ss.str();
-}
-
 // Client class member function implimentation
 
 void GFSClient::BMAddConcurrentWriteClData(int client_number, int duration) {
@@ -233,6 +255,26 @@ std::string GFSClient::ClientServerPing(const std::string& user,
               << std::endl;
     return "RPC failed";
   }
+}
+
+Status GFSClient::Delete(const std::string& filename) {
+  DeleteFileRequest request;
+  request.set_filename(filename);
+
+  DeleteFileReply reply;
+  ClientContext context;
+  return stub_master_->DeleteFile(&context, request, &reply);
+}
+
+Status GFSClient::Move(const std::string& old_filename,
+                       const std::string& new_filename) {
+  MoveFileRequest request;
+  request.set_old_filename(old_filename);
+  request.set_new_filename(new_filename);
+
+  MoveFileReply reply;
+  ClientContext context;
+  return stub_master_->MoveFile(&context, request, &reply);
 }
 
 Status GFSClient::Read(std::string* buf, const std::string& filename,
