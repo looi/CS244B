@@ -261,20 +261,6 @@ void GFSServiceImpl::ReportChunkInfo(int chunkhandle) {
   if (metadata.find(chunkhandle) == metadata.end()) {
     metadata[chunkhandle] = version_number; // TODO: implement version
   }
-
-  // TODO: We are doing synchronous writes for metadata on every write; Do this
-  // in a background thread instead
-  std::string filename = this->full_path + "/" + \
-                         this->metadata_file;
-
-  std::ofstream outfile(filename.c_str(), std::ios::app | std::ios::binary);
-  if (!outfile.is_open()) {
-    std::cout << "can't open file for writing: " << filename << std::endl;
-    return;
-  }
-
-  outfile << chunkhandle << " " << version_number << "\n";
-  outfile.close();
 }
 
 // This function takes the in-memory metadata and sends it over to the Master.
@@ -320,6 +306,18 @@ void GFSServiceImpl::ServerMasterHeartbeat() {
         auto *chunk_info = request.add_chunks();
         chunk_info->set_chunkhandle(ch.first);
         std::cout << "chunkhandle metadata: " << ch.first << std::endl;
+
+        // Also write metadata to disk for crash recovery
+        std::string filename = this->full_path + "/" + \
+                               this->metadata_file;
+
+        std::ofstream outfile(filename.c_str(), std::ios::app | std::ios::binary);
+        if (!outfile.is_open()) {
+          std::cout << "can't open file for writing: " << filename << std::endl;
+          continue;
+        }
+        outfile << ch.first << " " << ch.second << "\n";
+        outfile.close();
       }
       metadata.clear();
       metadata_mutex.unlock();
