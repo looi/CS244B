@@ -48,5 +48,5 @@ do
 done
 
 echo "Starting Client ..."
-runlocalssh ssh root@"$ClientAddr" -f "$gfspath/gfs_client" "$MasterAddr:$MasterPort" "127.0.0.1:88888" > /tmp/client
+runlocalssh ssh root@"$ClientAddr" -f "$gfspath/gfs_client" "$MasterAddr:$MasterPort" "127.0.0.1:8888" > /tmp/client
 echo "Done."
