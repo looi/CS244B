@@ -163,8 +163,8 @@ void RunClientBenchmark(int argc, char* argv[]) {
       grpc::CreateChannel(argv[2], grpc::InsecureChannelCredentials()),
       42); // TODO: chose a better client_id
 
-  const clock_t kWarmUpTime = 5 * CLOCKS_PER_SEC;
-  const clock_t kTotalRuntime = 10 * CLOCKS_PER_SEC;
+  const clock_t kWarmUpTime_sec = 5;
+  const clock_t kTotalRuntime_sec = 10;
 
   // Parse benchmark cmd arguments
   enum Operation {READ, WRITE};
@@ -222,20 +222,24 @@ void RunClientBenchmark(int argc, char* argv[]) {
   const long long kMaxOffset = num_chunck * CHUNK_SIZE_IN_BYTES;
   std::string buf;
 
-  clock_t benchmark_start_t, duration_t;
-  benchmark_start_t = clock();
-  while (clock() - benchmark_start_t < kWarmUpTime + kTotalRuntime) {
-    duration_t = clock();
+  struct timespec start, end;
+  //benchmark_start_t = clock();
+  clock_gettime(CLOCK_REALTIME, &start);
+  clock_gettime(CLOCK_REALTIME, &end);
+  while (end.tv_sec - start.tv_sec < kWarmUpTime_sec + kTotalRuntime_sec) {
+    struct timespec bm_start, bm_end;
+    clock_gettime(CLOCK_REALTIME, &bm_start);
     if (op == Operation::READ) {
       Status status = gfs_client.Read(&buf, filename, bm_offset, window_size);
     } else {
       Status status = gfs_client.Write(bm_data, filename, bm_offset);
     }
-    duration_t = clock() - duration_t;
+    clock_gettime(CLOCK_REALTIME, &bm_end);
+    long long duration = 1e9 * (bm_end.tv_sec - bm_start.tv_sec) + bm_end.tv_nsec - bm_start.tv_nsec;
 
-    if (clock() - benchmark_start_t > kWarmUpTime) {
+    if (end.tv_sec - start.tv_sec > kWarmUpTime_sec) {
       // Pushing stats data to Benchmark Server after warm-up
-      gfs_client.BMAddData(duration_t);
+      gfs_client.BMAddData(duration);
     }
 
     if (mode == Method::SEQUENCIAL) {
@@ -244,6 +248,7 @@ void RunClientBenchmark(int argc, char* argv[]) {
       double ratio = (rand() % 100) / 100;
       write_offset = floor(ratio * (kMaxOffset - CHUNK_SIZE_IN_BYTES));
     }
+    clock_gettime(CLOCK_REALTIME, &end);
   }
 }
 
@@ -291,7 +296,7 @@ void GFSClient::BMAddTestInfo(const std::string &info) {
   //std::cout << "Send data to BM got reply: " << reply.message();
 }
 
-void GFSClient::BMAddData(int duration) {
+void GFSClient::BMAddData(long long duration) {
   AddDataRequest request;
   request.set_duration(duration);
   ClientContext context;

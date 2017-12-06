@@ -41,7 +41,7 @@ class GFSClient {
 
   // Client functions to report data to Benchmark Server
   void BMAddTestInfo(const std::string &);
-  void BMAddData(int duration_ms);
+  void BMAddData(long long duration_ms);
 
   // Helper funtions (TODO: might need to move to private)
 
