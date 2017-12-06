@@ -2,35 +2,7 @@
 #include <mutex>
 #include <thread>
 
-#include <grpc++/grpc++.h>
-#include "gfs.grpc.pb.h"
 #include "gfs_common.h"
-
-using grpc::Server;
-using grpc::ServerBuilder;
-using grpc::ServerContext;
-using grpc::Status;
-using gfs::GFS;
-using gfs::GFSMaster;
-using gfs::PingRequest;
-using gfs::PingReply;
-using gfs::ReadChunkRequest;
-using gfs::ReadChunkReply;
-using gfs::WriteChunkRequest;
-using gfs::WriteChunkReply;
-using gfs::SerializedWriteRequest;
-using gfs::SerializedWriteReply;
-using gfs::PushDataRequest;
-using gfs::PushDataReply;
-using gfs::HeartbeatRequest;
-using gfs::HeartbeatReply;
-using gfs::ReplicateChunksRequest;
-using gfs::ReplicateChunksReply;
-using gfs::CopyChunksRequest;
-using gfs::CopyChunksReply;
-using grpc::Channel;
-using grpc::ClientContext;
-using google::protobuf::Timestamp;
 
 typedef struct ChunkId {
   int client_id;
@@ -93,6 +65,10 @@ class GFSServiceImpl final : public GFS::Service {
   Status CopyChunks(ServerContext* context,
                     const CopyChunksRequest* request,
                     CopyChunksReply* reply);
+
+  Status DeleteChunks(ServerContext* context,
+                      const DeleteChunksRequest* request,
+                      DeleteChunksReply* reply);
 
   void ReportChunkInfo(int chunkhandle);
 

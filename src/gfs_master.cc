@@ -3,12 +3,12 @@
 #include <random>
 
 #include "gfs_master.h"
-#include "gfs_common.h"
 
 const char *const DB_INIT_QUERIES[] = {
   // Use Write-Ahead Logging for sqlite (https://sqlite.org/wal.html)
   // WAL mode should be faster, so we could benchmark with WAL on and off.
   "PRAGMA journal_mode=WAL",
+  "PRAGMA foreign_keys=ON",
 
   // The file table maps each filename to a unique file ID.
   "CREATE TABLE IF NOT EXISTS file (file_id INTEGER PRIMARY KEY, filename TEXT NOT NULL)",
@@ -17,8 +17,12 @@ const char *const DB_INIT_QUERIES[] = {
 
   // The chunk table maps each chunkhandle to a file_id.
   // For each file, successive chunks have increasing chunkhandles.
-  "CREATE TABLE IF NOT EXISTS chunk (chunkhandle INTEGER PRIMARY KEY, "
-    "file_id INTEGER NOT NULL, chunk_index INTEGER NOT NULL)",
+  // ON DELETE CASCADE means that if the file is deleted,
+  // chunks are automatically deleted.
+  "CREATE TABLE IF NOT EXISTS chunk ("
+    "chunkhandle INTEGER PRIMARY KEY, "
+    "file_id INTEGER NOT NULL REFERENCES file(file_id) ON DELETE CASCADE, "
+    "chunk_index INTEGER NOT NULL)",
   // Enforce uniqueness of (file_id, chunk_index).
   "CREATE UNIQUE INDEX IF NOT EXISTS chunk_file_id_chunk_index ON chunk (file_id, chunk_index)",
 };
@@ -181,12 +185,59 @@ Status GFSMasterImpl::GetFileLength(ServerContext* context,
   return Status::OK;
 }
 
+Status GFSMasterImpl::MoveFile(ServerContext* context,
+                               const MoveFileRequest* request,
+                               MoveFileReply* reply) {
+  // Attempt to move file in sqlite database.
+  sqlite3_stmt *move_file_stmt;
+  ThrowIfSqliteFailed(sqlite3_prepare_v2(db_,
+      "UPDATE file SET filename=? WHERE filename=?",
+      -1, &move_file_stmt, nullptr));
+  ThrowIfSqliteFailed(sqlite3_bind_text(move_file_stmt, 1,
+      request->new_filename().c_str(), request->new_filename().length(),
+      SQLITE_STATIC));
+  ThrowIfSqliteFailed(sqlite3_bind_text(move_file_stmt, 2,
+      request->old_filename().c_str(), request->old_filename().length(),
+      SQLITE_STATIC));
+  ThrowIfSqliteFailed(sqlite3_step(move_file_stmt));
+  ThrowIfSqliteFailed(sqlite3_finalize(move_file_stmt));
+  if (sqlite3_changes(db_) == 0) {
+    return Status(grpc::NOT_FOUND, "File does not exist.");
+  }
+  return Status::OK;
+}
+
+Status GFSMasterImpl::DeleteFile(ServerContext* context,
+                                 const DeleteFileRequest* request,
+                                 DeleteFileReply* reply) {
+  // Attempt to move file in sqlite database.
+  // Chunks are automatically deleted by sqlite (ON DELETE CASCADE).
+  sqlite3_stmt *delete_file_stmt;
+  ThrowIfSqliteFailed(sqlite3_prepare_v2(db_,
+      "DELETE FROM file WHERE filename=?",
+      -1, &delete_file_stmt, nullptr));
+  ThrowIfSqliteFailed(sqlite3_bind_text(delete_file_stmt, 1,
+      request->filename().c_str(), request->filename().length(),
+      SQLITE_STATIC));
+  ThrowIfSqliteFailed(sqlite3_step(delete_file_stmt));
+  ThrowIfSqliteFailed(sqlite3_finalize(delete_file_stmt));
+  if (sqlite3_changes(db_) == 0) {
+    return Status(grpc::NOT_FOUND, "File does not exist.");
+  }
+  return Status::OK;
+
+}
+
 Status GFSMasterImpl::Heartbeat(ServerContext* context,
                                 const HeartbeatRequest* request,
                                 HeartbeatReply* response) {
   std::lock_guard<std::mutex> guard(mutex_);
   if (!chunk_servers_.count(request->location())) {
     std::cout << "Found out about new chunkserver: " << request->location() << std::endl;
+    // Create connectiont to chunkserver that can be reused.
+    chunk_servers_[request->location()].stub = gfs::GFS::NewStub(
+        grpc::CreateChannel(request->location(),
+                            grpc::InsecureChannelCredentials()));
   }
   // Set new lease expiry for chunkserver.
   chunk_servers_[request->location()].lease_expiry = time(nullptr) + LEASE_DURATION_SECONDS;
@@ -317,10 +368,17 @@ void GFSMasterImpl::RereplicationThread() {
         }
       }
 
+      // Get list of chunkhandles from database.
+      auto db_chunkhandles = GetAllChunkhandlesFromDb();
+
+      // Map from chunkserver location to list of chunkhandles to delete.
+      std::map<std::string, std::vector<int64_t> > chunkhandles_to_delete;
+
       // Rereplicate chunks if necessary
-      for (auto& it : chunk_locations_) {
-        int64_t chunkhandle = it.first;
-        auto& locations = it.second;
+      for (auto it = chunk_locations_.begin(); it != chunk_locations_.end(); ) {
+        int64_t chunkhandle = it->first;
+        auto& locations = it->second;
+
         for (auto location = locations.begin(); location != locations.end(); ) {
           if (chunk_servers_.count(location->location) == 0) {
             // This chunkserver's lease expired.
@@ -329,6 +387,19 @@ void GFSMasterImpl::RereplicationThread() {
             ++location;
           }
         }
+
+        if (!db_chunkhandles.count(chunkhandle)) {
+          // This chunkhandle does not exist in the database.
+          // Instruct all chunkservers to delete chunk.
+          for (const auto& location : locations) {
+            chunkhandles_to_delete[location.location].push_back(chunkhandle);
+          }
+          std::cout << "Chunkhandle " << chunkhandle << " no longer exists." << std::endl;
+          // Delete chunkhandle from memory.
+          it = chunk_locations_.erase(it);
+          continue;
+        }
+
         if ((locations.size() < NUM_CHUNKSERVER_REPLICAS) &&
             (locations.size() > 0)) {
           int old_size = locations.size();
@@ -341,34 +412,61 @@ void GFSMasterImpl::RereplicationThread() {
           if (chunk_servers_.size() >= NUM_CHUNKSERVER_REPLICAS) {
             assert(new_size > old_size);
           }
+          gfs::GFS::Stub& location_0_stub = *chunk_servers_[locations[0].location].stub;
           for (int i = old_size; i < new_size; i++) {
             // Copy from locations[0] to locations[i] via ReplicateChunks RPC
             ReplicateChunksRequest req;
             ReplicateChunksReply rep;
             ClientContext cont;
 
-            // Create a connection to replica ChunkServer
-            std::unique_ptr<gfs::GFS::Stub> stub = gfs::GFS::NewStub(
-                grpc::CreateChannel(locations[0].location,
-                                    grpc::InsecureChannelCredentials()));
             auto *chunk = req.add_chunks();
             chunk->set_chunkhandle(chunkhandle);
             req.set_location(locations[i].location);
 
-            Status status = stub->ReplicateChunks(&cont, req, &rep);
-
-            if (status.ok()) {
-              std::cout << "ReplicateChunks request succeeded from: " <<
-                        locations[0].location << " to: " <<
-                        locations[i].location << std::endl;
-            }
+            Status status = location_0_stub.ReplicateChunks(&cont, req, &rep);
+            std::cout << "ReplicateChunks request from: " <<
+                      locations[0].location << " to: " <<
+                      locations[i].location << ": " <<
+                      FormatStatus(status) << std::endl;
           }
         }
+        ++it;
+      }
+
+      // Tell chunkservers to delete chunks if necessary.
+      for (const auto& it : chunkhandles_to_delete) {
+        const std::string& location = it.first;
+        const std::vector<int64_t> chunkhandles = it.second;
+        DeleteChunksRequest req;
+        DeleteChunksReply rep;
+        ClientContext cont;
+        for (int64_t chunkhandle : chunkhandles) {
+          req.add_chunkhandles(chunkhandle);
+        }
+
+        gfs::GFS::Stub& stub = *chunk_servers_[location].stub;
+        Status status = stub.DeleteChunks(&cont, req, &rep);
+        std::cout << "DeleteChunks request to " << location
+                  << ": " << FormatStatus(status) << std::endl;
       }
     }
     // Wait for 1 second, unless shutdown was triggereed.
     std::this_thread::sleep_for(std::chrono::seconds(1));
   }
+}
+
+std::set<int64_t> GFSMasterImpl::GetAllChunkhandlesFromDb() {
+  sqlite3_stmt *select_chunkhandles_stmt;
+  ThrowIfSqliteFailed(sqlite3_prepare_v2(db_,
+      "SELECT chunkhandle FROM chunk",
+      -1, &select_chunkhandles_stmt, nullptr));
+  std::set<int64_t> result;
+  while (sqlite3_step(select_chunkhandles_stmt) == SQLITE_ROW) {
+    int64_t chunkhandle = sqlite3_column_int64(select_chunkhandles_stmt, 0);
+    result.insert(chunkhandle);
+  }
+  ThrowIfSqliteFailed(sqlite3_finalize(select_chunkhandles_stmt));
+  return result;
 }
 
 std::unique_ptr<Server> server;

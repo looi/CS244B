@@ -3,12 +3,7 @@
 #include <string>
 #include <set>
 
-#include <grpc++/grpc++.h>
-#include "gfs.grpc.pb.h"
-
-using grpc::Status;
-using gfs::FindLeaseHolderReply;
-using gfs::FindLocationsReply;
+#include "gfs_common.h"
 
 class GFSClient {
  public:
@@ -27,18 +22,12 @@ class GFSClient {
   // from the server.
   std::string ClientServerPing(const std::string& user, const std::string& cs);
 
-  // Create a new file using absolute path. Returns true if success.
-  bool Create(const std::string& filename);
+  // Delete a file given an absolute path.
+  Status Delete(const std::string& filename);
 
-  // Make a new directory using absolute path. Returns true if succeeded.
-  bool Mkdir(const std::string& path);
-
-  // List all files and directories under an absolute path.
-  std::set<std::string> List(const std::string& path);
-
-  // Delete a file (or a directory) given an absolute path. Returns true if
-  // succeeded.
-  bool Delete(const std::string& path);
+  // Moves a file given an absolute path.
+  Status Move(const std::string& old_filename,
+              const std::string& new_filename);
 
   // Fills the string with contents with off-set in the file.
   Status Read(std::string* buf, const std::string& filename,

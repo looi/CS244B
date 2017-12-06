@@ -39,16 +39,16 @@ TEMP_PATH = temp
 
 all: $(BIN_PATH) $(TEMP_PATH) $(BIN_PATH)/gfs_client $(BIN_PATH)/gfs_master $(BIN_PATH)/gfs_server $(BIN_PATH)/bm_server
 
-$(BIN_PATH)/gfs_client: $(TEMP_PATH)/gfs.pb.o $(TEMP_PATH)/gfs.grpc.pb.o $(TEMP_PATH)/gfs_client.o
+$(BIN_PATH)/gfs_client: $(TEMP_PATH)/gfs.pb.o $(TEMP_PATH)/gfs.grpc.pb.o $(TEMP_PATH)/gfs_client.o $(TEMP_PATH)/gfs_common.o
 	$(CXX) $(filter %.o,$^) $(LDFLAGS) -o $@
 
-$(BIN_PATH)/gfs_master: $(TEMP_PATH)/gfs.pb.o $(TEMP_PATH)/gfs.grpc.pb.o $(TEMP_PATH)/gfs_master.o $(TEMP_PATH)/sqlite3.o
+$(BIN_PATH)/gfs_master: $(TEMP_PATH)/gfs.pb.o $(TEMP_PATH)/gfs.grpc.pb.o $(TEMP_PATH)/gfs_master.o $(TEMP_PATH)/gfs_common.o $(TEMP_PATH)/sqlite3.o
 	$(CXX) $(filter %.o,$^) $(LDFLAGS) -o $@
 
-$(BIN_PATH)/gfs_server: $(TEMP_PATH)/gfs.pb.o $(TEMP_PATH)/gfs.grpc.pb.o $(TEMP_PATH)/gfs_server.o
+$(BIN_PATH)/gfs_server: $(TEMP_PATH)/gfs.pb.o $(TEMP_PATH)/gfs.grpc.pb.o $(TEMP_PATH)/gfs_server.o $(TEMP_PATH)/gfs_common.o
 	$(CXX) $(filter %.o,$^) $(LDFLAGS) -o $@
 
-$(BIN_PATH)/bm_server: $(TEMP_PATH)/gfs.pb.o $(TEMP_PATH)/gfs.grpc.pb.o $(TEMP_PATH)/bm_server.o
+$(BIN_PATH)/bm_server: $(TEMP_PATH)/gfs.pb.o $(TEMP_PATH)/gfs.grpc.pb.o $(TEMP_PATH)/bm_server.o $(TEMP_PATH)/gfs_common.o
 	$(CXX) $(filter %.o,$^) $(LDFLAGS) -o $@
 
 # End actual targets

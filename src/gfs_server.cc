@@ -328,7 +328,7 @@ void GFSServiceImpl::ServerMasterHeartbeat() {
     if (status.ok()) {
       std::cout << "New chunkhandle hearbeat sent " << std::endl;
     }
-    std::this_thread::sleep_for(std::chrono::seconds(1));
+    std::this_thread::sleep_for(std::chrono::seconds(HEARTBEAT_DURATION_SECONDS));
   }
 }
 
@@ -419,6 +419,16 @@ Status GFSServiceImpl::CopyChunks(ServerContext* context,
     ReportChunkInfo(chunk.chunkhandle());
   }
   return Status::OK;
+}
+
+Status GFSServiceImpl::DeleteChunks(ServerContext* context,
+                                    const DeleteChunksRequest* request,
+                                    DeleteChunksReply* reply) {
+  for (int64_t chunkhandle : request->chunkhandles()) {
+    // TODO: Actually perform deletion.
+    std::cout << "Got DeleteChunks request for " << chunkhandle << std::endl;
+  }
+  return Status(grpc::UNIMPLEMENTED, "Not implemented.");
 }
 
 GFSServiceImpl::~GFSServiceImpl() {
