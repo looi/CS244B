@@ -31,32 +31,33 @@ class GFSClient {
 
   // Fills the string with contents with off-set in the file.
   Status Read(std::string* buf, const std::string& filename,
-              const int offset, const int length);
+              const long long offset, const int length);
 
   // Writes the string to the file with an off-set.
-  Status Write(const std::string& buf, const std::string& filename, const int offset);
+  Status Write(const std::string& buf, const std::string& filename, const long long offset);
 
   // Appends the byte array to a file. Returns the off-set that the content resides in.
   int Append(char *buf, const std::string& filename);
 
   // Client functions to report data to Benchmark Server
-  void BMAddConcurrentWriteClData(int client_number, int duration_ms);
+  void BMAddTestInfo(const std::string &);
+  void BMAddData(int duration_ms);
 
   // Helper funtions (TODO: might need to move to private)
 
   // Client ReadChunk implementation
-  Status ReadChunk(const int chunkhandle, const int offset,
+  Status ReadChunk(const int chunkhandle, const long long offset,
                    const int length, const std::string& location, std::string *buf);
 
   // Client WriteChunk implementation
   std::string WriteChunk(const int chunkhandle, const std::string data,
-                         const int offset, const std::vector<std::string>& locations,
+                         const long long offset, const std::vector<std::string>& locations,
                          const std::string& primary_location);
 
   bool PushData(gfs::GFS::Stub* stub, const std::string& data,
                 const struct timeval timstamp);
 
-  bool SendWriteToChunkServer(const int chunkhandle, const int offset,
+  bool SendWriteToChunkServer(const int chunkhandle, const long long offset,
                               const struct timeval timstamp,
                               const std::vector<std::string>& locations,
                               const std::string& primary_location);

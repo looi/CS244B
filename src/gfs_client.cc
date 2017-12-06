@@ -7,6 +7,7 @@
 #include <inttypes.h>
 #include <sys/time.h>
 #include <time.h>
+#include <math.h>
 #include <random>
 
 #include <grpc++/grpc++.h>
@@ -16,8 +17,10 @@
 using grpc::Channel;
 using grpc::ClientContext;
 using grpc::Status;
-using gfs::AddConcurrentWriteClDataRequest;
-using gfs::AddConcurrentWriteClDataReply;
+using gfs::AddDataRequest;
+using gfs::AddDataReply;
+using gfs::AddTestInfoRequest;
+using gfs::AddTestInfoReply;
 using gfs::FindLeaseHolderRequest;
 using gfs::FindLeaseHolderReply;
 using gfs::FindLocationsRequest;
@@ -60,7 +63,8 @@ int main(int argc, char* argv[]) {
     }
   }
   
-  std::cout << "Usage: " << argv[0] << " <master_location> <benchmark_location> <option> ARGUEMENT\n"
+  std::cout << "Usage: " << argv[0] << " <master_location> <benchmark_location>"
+            << " <option> <option_arguement> <additional_arguments>\n"
             << "Locations like IP:port"
             << "Options:\n"
             << "\t-h,--help\t\tShow this help message\n"
@@ -162,27 +166,84 @@ void RunClientBenchmark(int argc, char* argv[]) {
   const clock_t kWarmUpTime = 5 * CLOCKS_PER_SEC;
   const clock_t kTotalRuntime = 10 * CLOCKS_PER_SEC;
 
-  // Parameters for Continuous write bench mark
-  int write_offset = 0;
-  const int kOffsetIncrement = 64;
-  std::string bm_filename = "a/benchmark.txt";
-  std::string bm_data(kOffsetIncrement, 'x');
+  // Parse benchmark cmd arguments
+  enum Operation {READ, WRITE};
+  enum Method {SEQUENCIAL, RANDOM};
+  int window_size = 4000;
+  Operation op = Operation::READ;
+  Method mode = Method::SEQUENCIAL;
+  std::string test_info;
+  if (argc > 5) {
+    for (int i = 5; i < argc; ++i) {
+      std::string arg = argv[i];
+      if ((arg == "-o") || (arg == "--operation")) {
+        std::string operation = argv[i++];
+        if (operation == "write") {
+          op = Operation::WRITE;
+          test_info = test_info + "write ";
+        } else {
+          test_info = test_info + "read ";
+        }
+      } else if ((arg == "-m") || (arg == "--method")) {
+        std::string method = argv[i++];
+        if (method == "sequencial") {
+          mode = Method::SEQUENCIAL;
+          test_info = test_info + "sequencial ";
+        } else {
+          test_info = test_info + "random ";
+        }
+      } else if ((arg == "-s") || (arg == "--size")) {
+        std::string size = argv[i++];
+        if (size == "big") {
+          window_size = CHUNK_SIZE_IN_BYTES;
+          test_info = test_info + "big_size = " + std::to_string(window_size);
+        } else {
+          test_info = test_info + "small_size = " + std::to_string(window_size);
+        }
+      }
+    }
+  }
+  gfs_client.BMAddTestInfo(test_info);
+
+  // Create a file and pad it to 1024-chunk size
+  std::string filename = "a/benchmark.txt";
+  std::string init_data(CHUNK_SIZE_IN_BYTES, 'x');
+  long long num_chunck = 10;
+  long long write_offset = 0;
+  for (int i = 0; i < num_chunck; i++) {
+    gfs_client.Write(init_data, filename, write_offset);
+    write_offset += init_data.size();
+  }
+
+  // Run benchmark.
+  const int kOffsetIncrement = window_size;
+  std::string bm_data(window_size, 'x');
+  long long bm_offset = 0;
+  const long long kMaxOffset = num_chunck * CHUNK_SIZE_IN_BYTES;
+  std::string buf;
 
   clock_t benchmark_start_t, duration_t;
   benchmark_start_t = clock();
   while (clock() - benchmark_start_t < kWarmUpTime + kTotalRuntime) {
     duration_t = clock();
-    Status status = gfs_client.Write(bm_data, bm_filename, write_offset);
+    if (op == Operation::READ) {
+      Status status = gfs_client.Read(&buf, filename, bm_offset, window_size);
+    } else {
+      Status status = gfs_client.Write(bm_data, filename, bm_offset);
+    }
     duration_t = clock() - duration_t;
-    //TODO: maybe add it to Write rpc??
-    int client_num = 1;
 
     if (clock() - benchmark_start_t > kWarmUpTime) {
       // Pushing stats data to Benchmark Server after warm-up
-      gfs_client.BMAddConcurrentWriteClData(client_num, duration_t);
+      gfs_client.BMAddData(duration_t);
     }
 
-    write_offset += kOffsetIncrement;
+    if (mode == Method::SEQUENCIAL) {
+      write_offset += kOffsetIncrement;
+    } else {
+      double ratio = (rand() % 100) / 100;
+      write_offset = floor(ratio * (kMaxOffset - CHUNK_SIZE_IN_BYTES));
+    }
   }
 }
 
@@ -221,13 +282,21 @@ void RunCLientSimple(int argc, char* argv[]) {
 
 // Client class member function implimentation
 
-void GFSClient::BMAddConcurrentWriteClData(int client_number, int duration) {
-  AddConcurrentWriteClDataRequest request;
-  request.set_client_number(client_number);
+void GFSClient::BMAddTestInfo(const std::string &info) {
+  AddTestInfoRequest request;
+  request.set_info(info);
+  ClientContext context;
+  AddTestInfoReply reply;
+  stub_bm_->AddTestInfo(&context, request, &reply);
+  //std::cout << "Send data to BM got reply: " << reply.message();
+}
+
+void GFSClient::BMAddData(int duration) {
+  AddDataRequest request;
   request.set_duration(duration);
   ClientContext context;
-  AddConcurrentWriteClDataReply reply;
-  stub_bm_->AddConcurrentWriteClData(&context, request, &reply);
+  AddDataReply reply;
+  stub_bm_->AddData(&context, request, &reply);
   //std::cout << "Send data to BM got reply: " << reply.message();
 }
 
@@ -278,7 +347,7 @@ Status GFSClient::Move(const std::string& old_filename,
 }
 
 Status GFSClient::Read(std::string* buf, const std::string& filename,
-                       const int offset, const int length) {
+                       const long long offset, const int length) {
   int64_t chunk_index = offset / CHUNK_SIZE_IN_BYTES;
   int64_t chunk_offset = offset - (chunk_index * CHUNK_SIZE_IN_BYTES);
   FindLocationsReply find_locations_reply;
@@ -306,7 +375,7 @@ Status GFSClient::Read(std::string* buf, const std::string& filename,
   }
 }
 
-Status GFSClient::Write(const std::string& buf, const std::string& filename, const int offset) {
+Status GFSClient::Write(const std::string& buf, const std::string& filename, const long long offset) {
   int64_t chunk_index = offset / CHUNK_SIZE_IN_BYTES;
   int64_t chunk_offset = offset - (chunk_index * CHUNK_SIZE_IN_BYTES);
   FindLeaseHolderReply lease_holder;
@@ -324,7 +393,7 @@ Status GFSClient::Write(const std::string& buf, const std::string& filename, con
   return Status::OK;
 }
 
-Status GFSClient::ReadChunk(const int chunkhandle, const int offset,
+Status GFSClient::ReadChunk(const int chunkhandle, const long long offset,
                             const int length, const std::string& location, std::string *buf) {
   // Data we are sending to the server.
   ReadChunkRequest request;
@@ -363,7 +432,7 @@ Status GFSClient::ReadChunk(const int chunkhandle, const int offset,
 //  ChunkServers)
 //  TODO: logic to create connections to ChunkServers based on locations
 std::string GFSClient::WriteChunk(const int chunkhandle, const std::string data,
-                                  const int offset, const std::vector<std::string>& locations,
+                                  const long long offset, const std::vector<std::string>& locations,
                                   const std::string& primary_location) {
   struct timeval tv;
   gettimeofday(&tv, NULL);
@@ -411,7 +480,7 @@ bool GFSClient::PushData(gfs::GFS::Stub* stub,
   }
 }
 
-bool GFSClient::SendWriteToChunkServer(const int chunkhandle, const int offset,
+bool GFSClient::SendWriteToChunkServer(const int chunkhandle, const long long offset,
                                        const struct timeval tv,
                                        const std::vector<std::string>& locations,
                                        const std::string& primary_location) {
