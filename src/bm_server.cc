@@ -13,36 +13,37 @@ using grpc::ServerBuilder;
 using grpc::ServerContext;
 using grpc::Status;
 using gfs::GFSBenchmark;
-using gfs::AddConcurrentWriteClDataRequest;
-using gfs::AddConcurrentWriteClDataReply;
+using gfs::AddTestInfoRequest;
+using gfs::AddTestInfoReply;
+using gfs::AddDataRequest;
+using gfs::AddDataReply;
 
 // Logic and data behind the server's behavior.
 class GFSBenchmarkServerImpl final : public GFSBenchmark::Service {
  public:
   GFSBenchmarkServerImpl() {}
   ~GFSBenchmarkServerImpl() {}
+
+  Status AddTestInfo(ServerContext* context, const AddTestInfoRequest* request,
+   AddTestInfoReply* reply) override {
+    info = request->info(); // in clock() num of cycles
+    std::cout << "Got test info: \n" << info << '\n';
+    reply->set_message("OK_AddTestInfo");
+    return Status::OK;
+  }
   
-  Status AddConcurrentWriteClData(
-    ServerContext* context,
-    const AddConcurrentWriteClDataRequest* request,
-    AddConcurrentWriteClDataReply* reply) override {
-    int client_num = request->client_number();
+  Status AddData(ServerContext* context, const AddDataRequest* request,
+   AddDataReply* reply) override {
     int duration = request->duration(); // in clock() num of cycles
-    concurrent_write_clientsN_time[client_num].push_back(duration);
-
-    std::cout << "Got ConcurrentWriteClData: " << client_num << " - " << duration << '\n';
-
-    reply->set_message("OK_AddConcurrentWriteClData");
+    data.push_back(duration);
+    std::cout << duration << '\n';
+    reply->set_message("OK_AddData");
     return Status::OK;
   }
 
-  void PrintResult() {
-    int median_index = concurrent_write_clientsN_time[1].size() / 2;
-    std::cout << "READ: client_number[1] = " <<  concurrent_write_clientsN_time[1][median_index];
-  }
- 
  private:
-  std::map<int, std::vector<int>> concurrent_write_clientsN_time;
+  std::string info;
+  std::vector<int> data;
 };
 
 int main(int argc, char** argv) {
@@ -62,8 +63,6 @@ int main(int argc, char** argv) {
   // Wait for the server to shutdown. Note that some other thread must be
   // responsible for shutting down the server for this call to ever return.
   server->Wait();
-
-  service.PrintResult();
 
   return 0;
 }

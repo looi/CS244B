@@ -13,16 +13,26 @@ service GFSBenchmark {
   // Client -> BenchmarkServer RPCs
   // --------------------------
 
-  // Add a data apir of (client_number, write_time)
-  rpc AddConcurrentWriteClData (AddConcurrentWriteClDataRequest) returns (AddConcurrentWriteClDataReply) {}
+  // Add a test description
+  rpc AddTestInfo (AddTestInfoRequest) returns (AddTestInfoReply) {}
+
+  // Add a data point
+  rpc AddData (AddDataRequest) returns (AddDataReply) {}
 }
 
-message AddConcurrentWriteClDataRequest {
-  int64 client_number = 1;
+message AddTestInfoRequest {
+  string info = 1;
+}
+
+message AddTestInfoReply {
+  string message = 1;
+}
+
+message AddDataRequest {
   int64 duration = 3;
 }
 
-message AddConcurrentWriteClDataReply {
+message AddDataReply {
   string message = 1;
 }
 
