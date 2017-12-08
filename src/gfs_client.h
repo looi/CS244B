@@ -65,8 +65,8 @@ class GFSClient {
   // Print all the file as for now
   void FindMatchingFiles(const std::string& prefix);
 
-  // Gets number of chunks in the file, prints for now
-  void GetFileLength(const std::string& filename);
+  // Gets number of chunks in the file
+  int GetFileLength(const std::string& filename);
 
 private:
   // Gets connection to chunkserver, opening a new one if necessary

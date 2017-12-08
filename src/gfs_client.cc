@@ -169,15 +169,15 @@ void RunClientBenchmark(int argc, char* argv[]) {
   // Parse benchmark cmd arguments
   enum Operation {READ, WRITE};
   enum Method {SEQUENCIAL, RANDOM};
-  int window_size = 4000;
+  int window_size = 4096;
   Operation op = Operation::READ;
-  Method mode = Method::SEQUENCIAL;
+  Method mode = Method::RANDOM;
   std::string test_info;
   if (argc > 5) {
     for (int i = 5; i < argc; ++i) {
       std::string arg = argv[i];
       if ((arg == "-o") || (arg == "--operation")) {
-        std::string operation = argv[i++];
+        std::string operation = argv[++i];
         if (operation == "write") {
           op = Operation::WRITE;
           test_info = test_info + "write ";
@@ -185,7 +185,7 @@ void RunClientBenchmark(int argc, char* argv[]) {
           test_info = test_info + "read ";
         }
       } else if ((arg == "-m") || (arg == "--method")) {
-        std::string method = argv[i++];
+        std::string method = argv[++i];
         if (method == "sequencial") {
           mode = Method::SEQUENCIAL;
           test_info = test_info + "sequencial ";
@@ -193,7 +193,7 @@ void RunClientBenchmark(int argc, char* argv[]) {
           test_info = test_info + "random ";
         }
       } else if ((arg == "-s") || (arg == "--size")) {
-        std::string size = argv[i++];
+        std::string size = argv[++i];
         if (size == "big") {
           window_size = CHUNK_SIZE_IN_BYTES;
           test_info = test_info + "big_size = " + std::to_string(window_size);
@@ -205,14 +205,19 @@ void RunClientBenchmark(int argc, char* argv[]) {
   }
   gfs_client.BMAddTestInfo(test_info);
 
+  Status status;
   // Create a file and pad it to 1024-chunk size
   std::string filename = "a/benchmark.txt";
   std::string init_data(CHUNK_SIZE_IN_BYTES, 'x');
   long long num_chunck = 10;
   long long write_offset = 0;
-  for (int i = 0; i < num_chunck; i++) {
-    gfs_client.Write(init_data, filename, write_offset);
-    write_offset += init_data.size();
+  if (gfs_client.GetFileLength(filename) != num_chunck) {
+    for (int i = 0; i < num_chunck; i++) {
+      status = gfs_client.Write(init_data, filename, write_offset);
+      if (!status.ok())
+        std::cout << FormatStatus(status);
+      write_offset += init_data.size();
+    }
   }
 
   // Run benchmark.
@@ -230,24 +235,30 @@ void RunClientBenchmark(int argc, char* argv[]) {
     struct timespec bm_start, bm_end;
     clock_gettime(CLOCK_REALTIME, &bm_start);
     if (op == Operation::READ) {
-      Status status = gfs_client.Read(&buf, filename, bm_offset, window_size);
+      status = gfs_client.Read(&buf, filename, bm_offset, window_size);
     } else {
-      Status status = gfs_client.Write(bm_data, filename, bm_offset);
+      status = gfs_client.Write(bm_data, filename, bm_offset);
     }
     clock_gettime(CLOCK_REALTIME, &bm_end);
+    if (!status.ok())
+      std::cout << FormatStatus(status);
     long long duration = 1e9 * (bm_end.tv_sec - bm_start.tv_sec) + bm_end.tv_nsec - bm_start.tv_nsec;
 
     if (end.tv_sec - start.tv_sec > kWarmUpTime_sec) {
       // Pushing stats data to Benchmark Server after warm-up
       gfs_client.BMAddData(duration);
+      std::cout << "window size: " << window_size << " duration: " << duration
+                << "; throughput (B/s) = " << (double) window_size/(duration*1e-9) << std::endl;
     }
 
     if (mode == Method::SEQUENCIAL) {
-      write_offset += kOffsetIncrement;
+      bm_offset += kOffsetIncrement;
     } else {
       double ratio = (rand() % 100) / 100;
-      write_offset = floor(ratio * (kMaxOffset - CHUNK_SIZE_IN_BYTES));
+      bm_offset = floor(ratio * (kMaxOffset - CHUNK_SIZE_IN_BYTES));
     }
+    if ((bm_offset + window_size) > kMaxOffset)
+      bm_offset = 0;
     clock_gettime(CLOCK_REALTIME, &end);
   }
 }
@@ -272,7 +283,7 @@ void RunCLientSimple(int argc, char* argv[]) {
     // int length;
     std::string data("new#data" + std::to_string(i));
     std::string filename("a/test" + std::to_string(i) + ".txt");
-    
+
     Status status = gfs_client.Write(data, filename, 0);
     std::cout << "Write status: " << FormatStatus(status) << std::endl;
 
@@ -444,18 +455,19 @@ std::string GFSClient::WriteChunk(const int chunkhandle, const std::string data,
 
   for (const auto& location : locations) {
     if (PushData(GetChunkserverStub(location), data, tv)) {
-      std::cout << "PushData succeeded to chunk server " << location <<
-                " for data = " << data << std::endl;
+//      std::cout << "PushData succeeded to chunk server " << location <<
+//                " for data = " << data << std::endl;
     } else {
       return "PushData RPC failed";
     }
   }
 
   if (SendWriteToChunkServer(chunkhandle, offset, tv, locations, primary_location)) {
-    return "RPC succeeded";
+//    return "RPC succeeded";
   } else {
     return "Write RPC failed";
   }
+  return "RPC succeeded";
 }
 
 bool GFSClient::PushData(gfs::GFS::Stub* stub,
@@ -477,10 +489,10 @@ bool GFSClient::PushData(gfs::GFS::Stub* stub,
   request.release_timestamp();
 
   if (status.ok()) {
-    std::cout << "PushData succeeded for data = " << data << std::endl;
+    // std::cout << "PushData succeeded for data = " << data << std::endl;
     return true;
   } else {
-    std::cout << "PushData failed for data = " << data << std::endl;
+    std::cout << "PushData failed; " << FormatStatus(status) << std::endl;
     return false;
   }
 }
@@ -562,7 +574,7 @@ void GFSClient::FindMatchingFiles(const std::string& prefix) {
   }
 }
 
-void GFSClient::GetFileLength(const std::string& filename) {
+int GFSClient::GetFileLength(const std::string& filename) {
   GetFileLengthRequest request;
   request.set_filename(filename);
 
@@ -575,16 +587,19 @@ void GFSClient::GetFileLength(const std::string& filename) {
     std::cout << status.error_code() << ": " << status.error_message()
               << std::endl;
   }
+  return reply.num_chunks();
 }
 
 gfs::GFS::Stub* GFSClient::GetChunkserverStub(const std::string& location) {
   gfs::GFS::Stub* result;
+  grpc::ChannelArguments argument;
+  argument.SetMaxReceiveMessageSize(100*1024*1024);
   auto it = stub_cs_.find(location);
   if (it != stub_cs_.end()) {
     result = it->second.get();
   } else {
     auto stub = gfs::GFS::NewStub(
-        grpc::CreateChannel(location, grpc::InsecureChannelCredentials()));
+        grpc::CreateCustomChannel(location, grpc::InsecureChannelCredentials(), argument));
     result = stub.get();
     stub_cs_[location] = std::move(stub);
   }

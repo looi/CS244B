@@ -6,6 +6,7 @@
 
 MasterPort=50052
 ServerPort=11111
+BMServerPort=8888
 
 MasterAddr=$1
 ClientAddr=$2
@@ -47,6 +48,9 @@ do
   let "fp += 1"
 done
 
+echo "Starting BM Server ..."
+runlocalssh ssh root@"$ClientAddr" -f "$gfspath/bm_server" > /tmp/bmserver
+
 echo "Starting Client ..."
-runlocalssh ssh root@"$ClientAddr" -f "$gfspath/gfs_client" "$MasterAddr:$MasterPort" "127.0.0.1:8888" > /tmp/client
+runlocalssh ssh root@"$ClientAddr" -f "$gfspath/gfs_client" "$MasterAddr:$MasterPort" "127.0.0.1:8888" -m BENCHMARK > /tmp/client
 echo "Done."

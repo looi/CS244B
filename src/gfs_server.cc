@@ -73,7 +73,7 @@ Status GFSServiceImpl::ReadChunk(ServerContext* context,
   std::string filename = this->full_path + "/" + \
                          std::to_string(chunkhandle);
 
-  if ((length + offset >= CHUNK_SIZE_IN_BYTES)) {
+  if ((length + offset > CHUNK_SIZE_IN_BYTES)) {
     std::cout << "Read exceeds chunk size: " << length + offset << std::endl;
     reply->set_bytes_read(0);
     return Status::OK;
@@ -116,7 +116,7 @@ int GFSServiceImpl::PerformLocalWriteChunk(const WriteChunkInfo& wc_info)
   std::string filename = this->full_path + "/" + \
                          std::to_string(chunkhandle);
 
-  if ((length + offset >= CHUNK_SIZE_IN_BYTES)) {
+  if ((length + offset > CHUNK_SIZE_IN_BYTES)) {
     std::cout << "Write exceeds chunk size: " << length + offset << std::endl;
     return 0;
   }
@@ -240,7 +240,7 @@ Status GFSServiceImpl::PushData(ServerContext* context,
   std::string data = request->data();
 
   std::cout << "Got server PushData for clientid = " << \
-            chunk_id.client_id << " and data = " << data << std::endl;
+            chunk_id.client_id /*<<" and data = " << data */<< std::endl;
 
   std::lock_guard<std::mutex> guard(buffercache_mutex);
 
@@ -287,7 +287,6 @@ void GFSServiceImpl::ServerMasterHeartbeat() {
   }
 
   while (true) {
-    std::cout << "Heartbeat thread woke up" << std::endl;
     am_i_dead_mutex.lock();
     if (am_i_dead) {
       break;
@@ -325,9 +324,6 @@ void GFSServiceImpl::ServerMasterHeartbeat() {
     request.set_location(location_me);
 
     Status status = stub_master->Heartbeat(&context, request, &reply);
-    if (status.ok()) {
-      std::cout << "New chunkhandle hearbeat sent " << std::endl;
-    }
     std::this_thread::sleep_for(std::chrono::seconds(HEARTBEAT_DURATION_SECONDS));
   }
 }
@@ -402,7 +398,7 @@ Status GFSServiceImpl::CopyChunks(ServerContext* context,
     std::string data = chunk.data();
     int length = data.length();
 
-    if ((length >= CHUNK_SIZE_IN_BYTES)) {
+    if ((length > CHUNK_SIZE_IN_BYTES)) {
       std::cout << "Write exceeds chunk size: " << length << std::endl;
       return Status(grpc::FAILED_PRECONDITION, "Write length > CHUNK_SIZE");
     }
@@ -457,6 +453,7 @@ void RunServer(std::string master_address, std::string path,
   ServerBuilder builder;
   // Listen on the given address without any authentication mechanism.
   builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
+  builder.SetMaxReceiveMessageSize(1024*1024*100);
   // Register "service" as the instance through which we'll communicate with
   // clients. In this case it corresponds to an *synchronous* service.
   builder.RegisterService(&service);
