@@ -19,8 +19,8 @@ using grpc::ClientContext;
 using grpc::Status;
 using gfs::AddDataRequest;
 using gfs::AddDataReply;
-using gfs::AddTestInfoRequest;
-using gfs::AddTestInfoReply;
+using gfs::ClientBMHandshakeRequest;
+using gfs::ClientBMHandshakeReply;
 using gfs::FindLeaseHolderRequest;
 using gfs::FindLeaseHolderReply;
 using gfs::FindLocationsRequest;
@@ -154,6 +154,44 @@ void RunClientCommand(int argc, char* argv[]) {
 }
 
 void RunClientBenchmark(int argc, char* argv[]) {
+  // Set up default parameters
+  const int kWarmUpTime_sec = 5;
+  int runtime_sec = 10;
+  int client_id = 0;
+  enum Operation {READ, WRITE};
+  enum Method {SEQUENTIAL, RANDOM};
+  Operation op = Operation::READ;
+  Method mode = Method::RANDOM;
+  int window_size = 4096;
+  std::vector<std::string> info = {"READ", "RANDOM", "4096"};
+
+  // Parse benchmark cmd arguments
+  if (argc > 5) {
+    for (int i = 5; i < argc; ++i) {
+      std::string arg = argv[i];
+      if (arg == "--id") {
+        client_id = std::stoi(argv[++i]);
+      } else if ((arg == "-o") || (arg == "--operation")) {
+        std::string operation = argv[++i];
+        if (operation == "write") {
+          op = Operation::WRITE;
+          info[0] = "WRITE";
+        }
+      } else if ((arg == "-m") || (arg == "--method")) {
+        std::string method = argv[++i];
+        if (method == "sequential") {
+          mode = Method::SEQUENTIAL;
+          info[1] = "SEQUENTIAL";
+        }
+      } else if ((arg == "-s") || (arg == "--size")) {
+        window_size = std::stoi(argv[++i]);
+        info[2] = std::to_string(window_size);
+      } else if ((arg == "-t") || (arg == "--time")) {
+        runtime_sec = std::stoi(argv[++i]);
+      }
+    }
+  }
+
   // Instantiate the client. It requires a channel, out of which the actual RPCs
   // are created. This channel models a connection to an endpoint (in this case,
   // localhost at port 50051). We indicate that the channel isn't authenticated
@@ -161,58 +199,21 @@ void RunClientBenchmark(int argc, char* argv[]) {
   GFSClient gfs_client(
       grpc::CreateChannel(argv[1], grpc::InsecureChannelCredentials()),
       grpc::CreateChannel(argv[2], grpc::InsecureChannelCredentials()),
-      42); // TODO: chose a better client_id
+      client_id);
 
-  const clock_t kWarmUpTime_sec = 5;
-  const clock_t kTotalRuntime_sec = 10;
-
-  // Parse benchmark cmd arguments
-  enum Operation {READ, WRITE};
-  enum Method {SEQUENCIAL, RANDOM};
-  int window_size = 4096;
-  Operation op = Operation::READ;
-  Method mode = Method::RANDOM;
-  std::string test_info;
-  if (argc > 5) {
-    for (int i = 5; i < argc; ++i) {
-      std::string arg = argv[i];
-      if ((arg == "-o") || (arg == "--operation")) {
-        std::string operation = argv[++i];
-        if (operation == "write") {
-          op = Operation::WRITE;
-          test_info = test_info + "write ";
-        } else {
-          test_info = test_info + "read ";
-        }
-      } else if ((arg == "-m") || (arg == "--method")) {
-        std::string method = argv[++i];
-        if (method == "sequencial") {
-          mode = Method::SEQUENCIAL;
-          test_info = test_info + "sequencial ";
-        } else {
-          test_info = test_info + "random ";
-        }
-      } else if ((arg == "-s") || (arg == "--size")) {
-        std::string size = argv[++i];
-        if (size == "big") {
-          window_size = CHUNK_SIZE_IN_BYTES;
-          test_info = test_info + "big_size = " + std::to_string(window_size);
-        } else {
-          test_info = test_info + "small_size = " + std::to_string(window_size);
-        }
-      }
-    }
-  }
-  gfs_client.BMAddTestInfo(test_info);
+  // Print and send test info to master
+  std::string test_info = "Client[" + std::to_string(client_id) + "] "
+                          + info[0] + info[1] + info[2];
+  gfs_client.ClientBMHandshake(info[0], info[1], window_size);
 
   Status status;
   // Create a file and pad it to 1024-chunk size
   std::string filename = "a/benchmark.txt";
   std::string init_data(CHUNK_SIZE_IN_BYTES, 'x');
-  long long num_chunck = 10;
+  long long num_chunk = 10;
   long long write_offset = 0;
-  if (gfs_client.GetFileLength(filename) != num_chunck) {
-    for (int i = 0; i < num_chunck; i++) {
+  if (gfs_client.GetFileLength(filename) != num_chunk) {
+    for (int i = 0; i < num_chunk; i++) {
       status = gfs_client.Write(init_data, filename, write_offset);
       if (!status.ok())
         std::cout << FormatStatus(status);
@@ -221,17 +222,23 @@ void RunClientBenchmark(int argc, char* argv[]) {
   }
 
   // Run benchmark.
-  const int kOffsetIncrement = window_size;
   std::string bm_data(window_size, 'x');
   long long bm_offset = 0;
-  const long long kMaxOffset = num_chunck * CHUNK_SIZE_IN_BYTES;
+  const long long kMaxOffset = num_chunk * CHUNK_SIZE_IN_BYTES;
   std::string buf;
 
   struct timespec start, end;
   //benchmark_start_t = clock();
   clock_gettime(CLOCK_REALTIME, &start);
   clock_gettime(CLOCK_REALTIME, &end);
-  while (end.tv_sec - start.tv_sec < kWarmUpTime_sec + kTotalRuntime_sec) {
+  while (end.tv_sec - start.tv_sec < kWarmUpTime_sec + runtime_sec) {
+    // Check if read/write on the boundary of chunks
+    long long chunk_id = bm_offset / CHUNK_SIZE_IN_BYTES;
+    long long remain_in_last_chunk = bm_offset - (chunk_id % CHUNK_SIZE_IN_BYTES);
+    if (remain_in_last_chunk < window_size) {
+      bm_offset = (chunk_id + 1) * CHUNK_SIZE_IN_BYTES - window_size;
+    }
+
     struct timespec bm_start, bm_end;
     clock_gettime(CLOCK_REALTIME, &bm_start);
     if (op == Operation::READ) {
@@ -242,7 +249,8 @@ void RunClientBenchmark(int argc, char* argv[]) {
     clock_gettime(CLOCK_REALTIME, &bm_end);
     if (!status.ok())
       std::cout << FormatStatus(status);
-    long long duration = 1e9 * (bm_end.tv_sec - bm_start.tv_sec) + bm_end.tv_nsec - bm_start.tv_nsec;
+    long long duration = 1e9 * (bm_end.tv_sec - bm_start.tv_sec) +
+                         bm_end.tv_nsec - bm_start.tv_nsec;
 
     if (end.tv_sec - start.tv_sec > kWarmUpTime_sec) {
       // Pushing stats data to Benchmark Server after warm-up
@@ -251,8 +259,8 @@ void RunClientBenchmark(int argc, char* argv[]) {
                 << "; throughput (B/s) = " << (double) window_size/(duration*1e-9) << std::endl;
     }
 
-    if (mode == Method::SEQUENCIAL) {
-      bm_offset += kOffsetIncrement;
+    if (mode == Method::SEQUENTIAL) {
+      bm_offset += window_size;
     } else {
       double ratio = (rand() % 100) / 100;
       bm_offset = floor(ratio * (kMaxOffset - CHUNK_SIZE_IN_BYTES));
@@ -298,17 +306,22 @@ void RunCLientSimple(int argc, char* argv[]) {
 
 // Client class member function implimentation
 
-void GFSClient::BMAddTestInfo(const std::string &info) {
-  AddTestInfoRequest request;
-  request.set_info(info);
+void GFSClient::ClientBMHandshake(
+  const std::string &operation, const std::string &method, int size) {
+  ClientBMHandshakeRequest request;
+  request.set_id(client_id_);
+  request.set_operation(operation);
+  request.set_method(method);
+  request.set_size(size);
   ClientContext context;
-  AddTestInfoReply reply;
-  stub_bm_->AddTestInfo(&context, request, &reply);
+  ClientBMHandshakeReply reply;
+  stub_bm_->ClientBMHandshake(&context, request, &reply);
   //std::cout << "Send data to BM got reply: " << reply.message();
 }
 
 void GFSClient::BMAddData(long long duration) {
   AddDataRequest request;
+  request.set_id(client_id_);
   request.set_duration(duration);
   ClientContext context;
   AddDataReply reply;

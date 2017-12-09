@@ -14,22 +14,26 @@ service GFSBenchmark {
   // --------------------------
 
   // Add a test description
-  rpc AddTestInfo (AddTestInfoRequest) returns (AddTestInfoReply) {}
+  rpc ClientBMHandshake (ClientBMHandshakeRequest) returns (ClientBMHandshakeReply) {}
 
   // Add a data point
   rpc AddData (AddDataRequest) returns (AddDataReply) {}
 }
 
-message AddTestInfoRequest {
-  string info = 1;
+message ClientBMHandshakeRequest {
+  int64 id = 1;
+  string operation = 2;
+  string method = 3;
+  int64 size = 4;
 }
 
-message AddTestInfoReply {
+message ClientBMHandshakeReply {
   string message = 1;
 }
 
 message AddDataRequest {
-  int64 duration = 3;
+  int64 id = 1;
+  int64 duration = 2;
 }
 
 message AddDataReply {
