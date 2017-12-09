@@ -40,7 +40,7 @@ class GFSClient {
   int Append(char *buf, const std::string& filename);
 
   // Client functions to report data to Benchmark Server
-  void BMAddTestInfo(const std::string &);
+  void ClientBMHandshake(const std::string &operation, const std::string &method, int size);
   void BMAddData(long long duration_ms);
 
   // Helper funtions (TODO: might need to move to private)
