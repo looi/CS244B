@@ -234,7 +234,7 @@ void RunClientBenchmark(int argc, char* argv[]) {
   while (end.tv_sec - start.tv_sec < kWarmUpTime_sec + runtime_sec) {
     // Check if read/write on the boundary of chunks
     long long chunk_id = bm_offset / CHUNK_SIZE_IN_BYTES;
-    long long remain_in_last_chunk = bm_offset - (chunk_id % CHUNK_SIZE_IN_BYTES);
+    long long remain_in_last_chunk = bm_offset - (chunk_id * CHUNK_SIZE_IN_BYTES);
     if (remain_in_last_chunk < window_size) {
       bm_offset = (chunk_id + 1) * CHUNK_SIZE_IN_BYTES - window_size;
     }
