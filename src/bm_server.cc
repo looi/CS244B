@@ -57,14 +57,14 @@ class GFSBenchmarkServerImpl final : public GFSBenchmark::Service {
     time_data[id].push_back(now);
 
     reply->set_message("OK_AddData");
-    bm_mutex.lock();
+    bm_mutex.unlock();
     return Status::OK;
   }
 
  private:
   void PrintLastSecAverage(int id) {
-    for (auto i = avg_throughput_data.begin(); i != avg_throughput_data.end(); ++i) {
-      i->second = 0;
+    for (auto i = throughput_data.begin(); i != throughput_data.end(); ++i) {
+      avg_throughput_data[i->first] = 0;
     }
 
     // Calculate avg of all client
