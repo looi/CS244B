@@ -50,17 +50,17 @@ class GFSClient {
                    const int length, const std::string& location, std::string *buf);
 
   // Client WriteChunk implementation
-  std::string WriteChunk(const int chunkhandle, const std::string data,
-                         const long long offset, const std::vector<std::string>& locations,
-                         const std::string& primary_location);
+  Status WriteChunk(const int chunkhandle, const std::string data,
+                    const long long offset, const std::vector<std::string>& locations,
+                    const std::string& primary_location);
 
-  bool PushData(gfs::GFS::Stub* stub, const std::string& data,
-                const struct timeval timstamp);
+  Status PushData(gfs::GFS::Stub* stub, const std::string& data,
+                  const struct timeval timstamp);
 
-  bool SendWriteToChunkServer(const int chunkhandle, const long long offset,
-                              const struct timeval timstamp,
-                              const std::vector<std::string>& locations,
-                              const std::string& primary_location);
+  Status SendWriteToChunkServer(const int chunkhandle, const long long offset,
+                                const struct timeval timstamp,
+                                const std::vector<std::string>& locations,
+                                const std::string& primary_location);
 
   // Print all the file as for now
   void FindMatchingFiles(const std::string& prefix);
@@ -68,14 +68,11 @@ class GFSClient {
   // Gets number of chunks in the file
   int GetFileLength(const std::string& filename);
 
-private:
-  // Gets connection to chunkserver, opening a new one if necessary
-  gfs::GFS::Stub* GetChunkserverStub(const std::string& location);
-
   // Get chunkhandle and locations of a file for reading
   Status FindLocations(FindLocationsReply *reply,
                        const std::string& filename,
-                       int64_t chunk_index);
+                       int64_t chunk_index,
+                       bool use_cache);
 
   // Get chunkhandle and locations of a file for writing,
   // create a chunk if the file is not found
@@ -83,10 +80,17 @@ private:
                          const std::string& filename,
                          int64_t chunk_index);
 
+private:
+  // Gets connection to chunkserver, opening a new one if necessary
+  gfs::GFS::Stub* GetChunkserverStub(const std::string& location);
+
   std::map<std::string, std::unique_ptr<gfs::GFS::Stub>> stub_cs_;
   std::unique_ptr<gfs::GFSMaster::Stub> stub_master_;
   std::unique_ptr<gfs::GFSBenchmark::Stub> stub_bm_;
   int client_id_;
   std::string primary_;
   std::vector<std::string> chunkservers_;
+
+  // Map from (filename, chunk_index) to (chunkhandle, locations)
+  std::map<std::pair<std::string, int64_t>, FindLocationsReply> find_locations_cache_;
 };
