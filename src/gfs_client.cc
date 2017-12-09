@@ -232,7 +232,8 @@ void RunClientBenchmark(int argc, char* argv[]) {
   const long long kMaxOffset = num_chunk * CHUNK_SIZE_IN_BYTES;
   std::string buf;
 
-  struct timespec start, end;
+  std::random_device rd;
+  std::mt19937 gen(rd());struct timespec start, end;
   //benchmark_start_t = clock();
   clock_gettime(CLOCK_REALTIME, &start);
   clock_gettime(CLOCK_REALTIME, &end);
@@ -240,10 +241,11 @@ void RunClientBenchmark(int argc, char* argv[]) {
     // Check if read/write on the boundary of chunks
     long long chunk_id = bm_offset / CHUNK_SIZE_IN_BYTES;
     long long remain_in_last_chunk = bm_offset - (chunk_id * CHUNK_SIZE_IN_BYTES);
-    if (remain_in_last_chunk < window_size) {
+    if ((CHUNK_SIZE_IN_BYTES - remain_in_last_chunk) < window_size) {
       bm_offset = (chunk_id + 1) * CHUNK_SIZE_IN_BYTES - window_size;
     }
 
+    std::cout << "bm_offset = " << bm_offset%(64*1024*1024) << std::endl;
     struct timespec bm_start, bm_end;
     clock_gettime(CLOCK_REALTIME, &bm_start);
     if (op == Operation::READ) {
@@ -267,8 +269,8 @@ void RunClientBenchmark(int argc, char* argv[]) {
     if (mode == Method::SEQUENTIAL) {
       bm_offset += window_size;
     } else {
-      double ratio = (rand() % 100) / 100;
-      bm_offset = floor(ratio * (kMaxOffset - CHUNK_SIZE_IN_BYTES));
+      std::uniform_int_distribution<> dis(0, kMaxOffset - 1);
+      bm_offset = dis(gen);
     }
     if ((bm_offset + window_size) > kMaxOffset)
       bm_offset = 0;
