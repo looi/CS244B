@@ -9,6 +9,7 @@
 #include <time.h>
 #include <math.h>
 #include <random>
+#include <thread>
 
 #include <grpc++/grpc++.h>
 #include "gfs.grpc.pb.h"
@@ -44,6 +45,7 @@ using google::protobuf::Timestamp;
 void RunCLientSimple(int argc, char* argv[]);
 void RunClientCommand(int argc, char* argv[]);
 void RunClientBenchmark(int argc, char* argv[]);
+void RunClientMasterBenchmark(int argc, char* argv[]);
 
 // Client's main function
 int main(int argc, char* argv[]) {
@@ -59,6 +61,9 @@ int main(int argc, char* argv[]) {
       return 0;
     } else if (strcmp(argv[4], "BENCHMARK") == 0) {
       RunClientBenchmark(argc, argv);
+      return 0;
+    } else if (strcmp(argv[4], "MASTER_BENCHMARK") == 0) {
+      RunClientMasterBenchmark(argc, argv);
       return 0;
     }
   }
@@ -304,6 +309,69 @@ void RunCLientSimple(int argc, char* argv[]) {
   gfs_client.FindMatchingFiles("a/test");
 }
 
+int64_t ElapsedNs(timespec const& start, timespec const& end) {
+  return (1000000000LL*end.tv_sec + end.tv_nsec) -
+         (1000000000LL*start.tv_sec + start.tv_nsec);
+}
+
+void RunClientMasterBenchmark(int argc, char* argv[]) {
+  GFSClient gfs_client(
+      grpc::CreateChannel(argv[1], grpc::InsecureChannelCredentials()),
+      grpc::CreateChannel(argv[2], grpc::InsecureChannelCredentials()),
+      42); // TODO: chose a better client_id
+
+  // Generate a random filename for this benchmark.
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  std::uniform_int_distribution<> dis('a', 'z');
+  std::string filename = "master_benchmark/";
+  for (int i = 0; i < 5; i++) {
+    filename += char(dis(gen));
+  }
+  std::cout << "Using filename " << filename << std::endl;
+
+  int64_t benchmark_duration_ns = 5000000000;
+  // First let's benchmark creating new chunks.
+  timespec start, current;
+  clock_gettime(CLOCK_REALTIME, &start);
+  int chunk_index = 0;
+  do {
+    FindLeaseHolderReply reply;
+    Status status = gfs_client.FindLeaseHolder(&reply, filename, chunk_index);
+    chunk_index++;
+    if (!status.ok()) {
+      std::cout << "FindLeaseHolder failed: " << FormatStatus(status) << std::endl;
+    }
+    clock_gettime(CLOCK_REALTIME, &current);
+  } while (ElapsedNs(start, current) < benchmark_duration_ns);
+  double seconds = ElapsedNs(start, current) * 1e-9;
+  double chunks_created_per_second = double(chunk_index) / seconds;
+  std::cout << "Created " << chunks_created_per_second << " chunks per second ("
+            << chunk_index << " in " << seconds << "s)." << std::endl;
+
+  // Now let's benchmark FindLocations for existing chunk.
+  clock_gettime(CLOCK_REALTIME, &start);
+  int total_chunks = chunk_index;
+  int find_locations_done = 0;
+  chunk_index = 0;
+  do {
+    FindLocationsReply reply;
+    // Make sure to disable caching.
+    Status status = gfs_client.FindLocations(&reply, filename, chunk_index, false);
+    // Loop through all chunks repeatedly.
+    chunk_index = (chunk_index + 1) % total_chunks;
+    if (!status.ok()) {
+      std::cout << "FindLocations failed: " << FormatStatus(status) << std::endl;
+    }
+    find_locations_done++;
+    clock_gettime(CLOCK_REALTIME, &current);
+  } while (ElapsedNs(start, current) < benchmark_duration_ns);
+  seconds = ElapsedNs(start, current) * 1e-9;
+  double find_locations_per_second = double(find_locations_done) / seconds;
+  std::cout << "Performed " << find_locations_per_second << " FindLocations per second ("
+            << find_locations_done << " in " << seconds << "s)." << std::endl;
+}
+
 // Client class member function implimentation
 
 void GFSClient::ClientBMHandshake(
@@ -379,21 +447,23 @@ Status GFSClient::Read(std::string* buf, const std::string& filename,
                        const long long offset, const int length) {
   int64_t chunk_index = offset / CHUNK_SIZE_IN_BYTES;
   int64_t chunk_offset = offset - (chunk_index * CHUNK_SIZE_IN_BYTES);
-  FindLocationsReply find_locations_reply;
-  Status status = FindLocations(&find_locations_reply, filename, chunk_index);
-  if (!status.ok()) {
-    return status;
-  }
-  if (find_locations_reply.locations_size() == 0) {
-    return Status(grpc::NOT_FOUND, "Unable to find replicas for chunk.");
-  }
   // Keep trying to read from a random chunkserver until successful.
   std::random_device rd;
   std::mt19937 gen(rd());
-  std::uniform_int_distribution<> dis(0, find_locations_reply.locations_size() - 1);
-  while (true) {
+  for (int i = 0; i < MAX_CLIENT_RETRIES; i++) {
+    // Only use FindLocations cache on the first try.
+    bool use_cache = (i == 0);
+    FindLocationsReply find_locations_reply;
+    Status status = FindLocations(&find_locations_reply, filename, chunk_index, use_cache);
+    if (!status.ok()) {
+      return status;
+    }
+    if (find_locations_reply.locations_size() == 0) {
+      return Status(grpc::NOT_FOUND, "Unable to find replicas for chunk.");
+    }
+    std::uniform_int_distribution<> dis(0, find_locations_reply.locations_size() - 1);
     const std::string& location = find_locations_reply.locations(dis(gen));
-    Status status = ReadChunk(find_locations_reply.chunkhandle(), chunk_offset,
+    status = ReadChunk(find_locations_reply.chunkhandle(), chunk_offset,
                               length, location, buf);
     if (status.ok()) {
       return status;
@@ -401,7 +471,10 @@ Status GFSClient::Read(std::string* buf, const std::string& filename,
     std::cout << "Tried to read chunkhandle " << find_locations_reply.chunkhandle()
               << " from " << location << " but read failed with error " << FormatStatus(status)
               << ". Retrying." << std::endl;
+    // Wait 1 second before retrying.
+    std::this_thread::sleep_for(std::chrono::seconds(1));
   }
+  return Status(grpc::ABORTED, "ReadChunk failed too many times.");
 }
 
 Status GFSClient::Write(const std::string& buf, const std::string& filename, const long long offset) {
@@ -416,10 +489,8 @@ Status GFSClient::Write(const std::string& buf, const std::string& filename, con
   for (const auto& location : lease_holder.locations()) {
     locations.push_back(location);
   }
-  // TODO: Handle WriteChunk error
-  WriteChunk(lease_holder.chunkhandle(), buf, chunk_offset,
-             locations, lease_holder.primary_location());
-  return Status::OK;
+  return WriteChunk(lease_holder.chunkhandle(), buf, chunk_offset,
+                    locations, lease_holder.primary_location());
 }
 
 Status GFSClient::ReadChunk(const int chunkhandle, const long long offset,
@@ -460,32 +531,25 @@ Status GFSClient::ReadChunk(const int chunkhandle, const long long offset,
 //  Call WriteChunk to the Primary ChunkServer (will contain list of secondary
 //  ChunkServers)
 //  TODO: logic to create connections to ChunkServers based on locations
-std::string GFSClient::WriteChunk(const int chunkhandle, const std::string data,
-                                  const long long offset, const std::vector<std::string>& locations,
-                                  const std::string& primary_location) {
+Status GFSClient::WriteChunk(const int chunkhandle, const std::string data,
+                             const long long offset, const std::vector<std::string>& locations,
+                             const std::string& primary_location) {
   struct timeval tv;
   gettimeofday(&tv, NULL);
 
   for (const auto& location : locations) {
-    if (PushData(GetChunkserverStub(location), data, tv)) {
-//      std::cout << "PushData succeeded to chunk server " << location <<
-//                " for data = " << data << std::endl;
-    } else {
-      return "PushData RPC failed";
+    Status status = PushData(GetChunkserverStub(location), data, tv);
+    if (!status.ok()) {
+      return status;
     }
   }
 
-  if (SendWriteToChunkServer(chunkhandle, offset, tv, locations, primary_location)) {
-//    return "RPC succeeded";
-  } else {
-    return "Write RPC failed";
-  }
-  return "RPC succeeded";
+  return SendWriteToChunkServer(chunkhandle, offset, tv, locations, primary_location);
 }
 
-bool GFSClient::PushData(gfs::GFS::Stub* stub,
-                         const std::string& data,
-                         const struct timeval tv) {
+Status GFSClient::PushData(gfs::GFS::Stub* stub,
+                           const std::string& data,
+                           const struct timeval tv) {
   PushDataRequest request;
   PushDataReply reply;
   ClientContext context;
@@ -501,19 +565,16 @@ bool GFSClient::PushData(gfs::GFS::Stub* stub,
   Status status = stub->PushData(&context, request, &reply);
   request.release_timestamp();
 
-  if (status.ok()) {
-    // std::cout << "PushData succeeded for data = " << data << std::endl;
-    return true;
-  } else {
+  if (!status.ok()) {
     std::cout << "PushData failed; " << FormatStatus(status) << std::endl;
-    return false;
   }
+  return status;
 }
 
-bool GFSClient::SendWriteToChunkServer(const int chunkhandle, const long long offset,
-                                       const struct timeval tv,
-                                       const std::vector<std::string>& locations,
-                                       const std::string& primary_location) {
+Status GFSClient::SendWriteToChunkServer(const int chunkhandle, const long long offset,
+                                         const struct timeval tv,
+                                         const std::vector<std::string>& locations,
+                                         const std::string& primary_location) {
   WriteChunkRequest request;
   WriteChunkReply reply;
   ClientContext context;
@@ -539,22 +600,35 @@ bool GFSClient::SendWriteToChunkServer(const int chunkhandle, const long long of
   if (status.ok()) {
     std::cout << "Write Chunk written_bytes = " << reply.bytes_written() << \
               std::endl;
-    return true;
   } else {
     std::cout << "Write Chunk failed " << std::endl;
-    return false;
   }
+  return status;
 }
 
 Status GFSClient::FindLocations(FindLocationsReply *reply,
                                 const std::string& filename,
-                                int64_t chunk_index) {
+                                int64_t chunk_index,
+                                bool use_cache) {
+  auto cache_key = std::make_pair(filename, chunk_index);
+  if (use_cache) {
+    auto it = find_locations_cache_.find(cache_key);
+    if (it != find_locations_cache_.end()) {
+      *reply = it->second;
+      return Status::OK;
+    }
+  }
+
   FindLocationsRequest request;
   request.set_filename(filename);
   request.set_chunk_index(chunk_index);
 
   ClientContext context;
-  return stub_master_->FindLocations(&context, request, reply);
+  Status status = stub_master_->FindLocations(&context, request, reply);
+  if (status.ok()) {
+    find_locations_cache_[cache_key] = *reply;
+  }
+  return status;
 }
 
 Status GFSClient::FindLeaseHolder(FindLeaseHolderReply *reply,
