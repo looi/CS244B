@@ -39,6 +39,8 @@ using gfs::SerializedWriteReply;
 using gfs::SerializedWriteRequest;
 using gfs::WriteChunkReply;
 using gfs::WriteChunkRequest;
+using gfs::AppendReply;
+using gfs::AppendRequest;
 using google::protobuf::Timestamp;
 using grpc::Channel;
 using grpc::ClientContext;
@@ -48,6 +50,7 @@ using grpc::ServerContext;
 using grpc::Status;
 
 #define CHUNK_SIZE_IN_BYTES (64 * (1 << 20)) // 64MiB
+#define MAX_APPEND_SIZE_IN_BYTES (16 * (1 << 20)) // 16MiB
 #define NUM_CHUNKSERVER_REPLICAS 3
 #define MAX_CLIENT_RETRIES 5
 
