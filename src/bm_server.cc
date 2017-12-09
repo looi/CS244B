@@ -68,7 +68,7 @@ class GFSBenchmarkServerImpl final : public GFSBenchmark::Service {
     double duration_avg = 0.0;
     double throughput_avg = 0.0;
     for (; i < (int)time_data[id].size(); i++) {
-      duration_avg += (duration_data[id][i] / num);
+      duration_avg += ((double)duration_data[id][i] / num);
       throughput_avg += (throughput_data[id][i] / num);
     }
 
@@ -81,7 +81,7 @@ class GFSBenchmarkServerImpl final : public GFSBenchmark::Service {
   std::map<int, std::string> operation;
   std::map<int, std::string> method;
   std::map<int, int> size;
-  std::map<int, std::vector<int>> duration_data;
+  std::map<int, std::vector<long long>> duration_data;
   std::map<int, std::vector<double>> throughput_data;
   std::map<int, std::vector<timespec>> time_data;
 };
