@@ -4,6 +4,7 @@
 #include <vector>
 #include <inttypes.h>
 #include <time.h>
+#include <mutex>
 
 #include <grpc++/grpc++.h>
 #include "gfs_common.h"
@@ -27,6 +28,7 @@ class GFSBenchmarkServerImpl final : public GFSBenchmark::Service {
 
   Status ClientBMHandshake(ServerContext* context, const ClientBMHandshakeRequest* request,
    ClientBMHandshakeReply* reply) override {
+    bm_mutex.lock();
     int id = request->id();
     operation[id] = request->operation();
     method[id] = request->method();
@@ -36,15 +38,17 @@ class GFSBenchmarkServerImpl final : public GFSBenchmark::Service {
               << method[id] << ", "
               << size[id] << std::endl;
     reply->set_message("OK_ClientBMHandshake");
+    bm_mutex.unlock();
     return Status::OK;
   }
   
   Status AddData(ServerContext* context, const AddDataRequest* request,
    AddDataReply* reply) override {
+    bm_mutex.lock();
     int id = request->id();
     int duration = request->duration(); // in nanosecond
     clock_gettime(CLOCK_REALTIME, &now);
-    if (time_data[id].size() >= 2 && now.tv_sec != time_data[id].back().tv_sec) {
+    if (time_data[id].size() >= 1 && now.tv_sec != time_data[id].back().tv_sec) {
       PrintLastSecAverage(id);
     }
     
@@ -53,36 +57,48 @@ class GFSBenchmarkServerImpl final : public GFSBenchmark::Service {
     time_data[id].push_back(now);
 
     reply->set_message("OK_AddData");
+    bm_mutex.unlock();
     return Status::OK;
   }
 
+ private:
   void PrintLastSecAverage(int id) {
-    int sec = time_data[id].back().tv_sec;
-    int i = time_data[id].size() - 1;
-    while (i >= 0 && time_data[id][i].tv_sec == sec) {
-      i--;
-    }
-    i++;
-
-    long long num = time_data[id].size() - i;
-    double duration_avg = 0.0;
-    double throughput_avg = 0.0;
-    for (; i < (int)time_data[id].size(); i++) {
-      duration_avg += ((double)duration_data[id][i] / num);
-      throughput_avg += (throughput_data[id][i] / num);
+    for (auto i = throughput_data.begin(); i != throughput_data.end(); ++i) {
+      avg_throughput_data[i->first] = 0;
     }
 
-    std::cout << "Avg for Client[" << id << "] = duration (ns) =" << duration_avg
-                << "   throughput (B/s) = " << throughput_avg << std::endl;
+    // Calculate avg of all client
+    for (auto i = avg_throughput_data.begin(); i != avg_throughput_data.end(); ++i) {
+      int id = i->first, size = throughput_data[id].size();
+      while (!throughput_data[id].empty()) {
+        i->second += (double)throughput_data[id].back() / size;
+        throughput_data[id].pop_back();
+        time_data[id].pop_back();
+        duration_data[id].pop_back();
+      }
+    }
+
+    double total_throughput = 0;
+    for (auto i = avg_throughput_data.begin(); i != avg_throughput_data.end(); ++i) {
+      total_throughput += i->second;
+      std::cout << "Avg for Client[" << i->first << "] throughput (B/s) = "
+                << avg_throughput_data[i->first] << '\n';
+    }
+
+    if (avg_throughput_data.size() > 1) {
+      std::cout << "Total throughput = " << total_throughput;
+    }
   }
 
- private:
   timespec now;
+  std::mutex bm_mutex;
+
   std::map<int, std::string> operation;
   std::map<int, std::string> method;
   std::map<int, int> size;
   std::map<int, std::vector<long long>> duration_data;
   std::map<int, std::vector<double>> throughput_data;
+  std::map<int, double> avg_throughput_data; 
   std::map<int, std::vector<timespec>> time_data;
 };
 

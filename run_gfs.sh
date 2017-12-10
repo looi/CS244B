@@ -1,8 +1,14 @@
 #!/bin/bash
 
 # Prepare SSD filesystems
-# mkfs -t ext4 /dev/elephant/elephant_0_0
-# mount -t ext4 -o noatime,discard,dioread_nolock /dev/elephant/elephant_0_0 /export/ssda
+prepare_ssd()
+{
+  echo "Preparing SSD ..."
+  for server in "$MasterAddr" "$ClientAddr" "${ChunkServerAddr[@]}"
+  do
+    runlocalssh ssh root@"$server" mkfs -t ext4 /dev/elephant/elephant_0_0; mkdir /export/ssda; mount -t ext4 -o noatime,discard,dioread_nolock /dev/elephant/elephant_0_0 /export/ssda
+  done
+}
 
 MasterPort=50052
 ServerPort=11111
@@ -11,8 +17,8 @@ BMServerPort=8888
 MasterAddr=$1
 ClientAddr=$2
 
-gfspath="/export/hda3/gfs_niketa"
-filespath="/export/hda3/gfs_niketa/files"
+gfspath="/export/ssda/gfs_niketa"
+filespath="/export/ssda/gfs_niketa/files"
 
 # function to prepare gfs
 prepare_gfs()
@@ -32,6 +38,7 @@ if [ "$#" -lt 5 ]; then
 fi
 shift 2
 ChunkServerAddr=( "$@" )
+prepare_ssd
 prepare_gfs
 
 echo "Starting GFS Master ..."
@@ -51,6 +58,6 @@ done
 echo "Starting BM Server ..."
 runlocalssh ssh root@"$ClientAddr" -f "$gfspath/bm_server" > /tmp/bmserver
 
-echo "Starting Client ..."
-runlocalssh ssh root@"$ClientAddr" -f "$gfspath/gfs_client" "$MasterAddr:$MasterPort" "127.0.0.1:8888" -m BENCHMARK > /tmp/client
-echo "Done."
+#echo "Starting Client ..."
+#runlocalssh ssh root@"$ClientAddr" -f "$gfspath/gfs_client" "$MasterAddr:$MasterPort" "127.0.0.1:8888" -m BENCHMARK > /tmp/client
+#echo "Done."

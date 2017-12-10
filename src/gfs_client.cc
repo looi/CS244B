@@ -1,6 +1,7 @@
 #include "gfs_client.h"
 
 #include <iostream>
+#include <fstream>
 #include <memory>
 #include <string>
 #include <sstream>
@@ -177,10 +178,12 @@ void RunClientBenchmark(int argc, char* argv[]) {
   int client_id = 0;
   enum Operation {READ, WRITE, APPEND};
   enum Method {SEQUENTIAL, RANDOM};
+  enum Filesystem {GFS, LOCAL};
   Operation op = Operation::READ;
   Method mode = Method::RANDOM;
+  Filesystem fs = Filesystem::GFS;
   int window_size = 4096;
-  std::vector<std::string> info = {"READ", "RANDOM", "4096"};
+  std::vector<std::string> info = {"READ", "RANDOM", "4096", "GFS"};
 
   // Parse benchmark cmd arguments
   if (argc > 5) {
@@ -208,6 +211,12 @@ void RunClientBenchmark(int argc, char* argv[]) {
         info[2] = std::to_string(window_size);
       } else if ((arg == "-t") || (arg == "--time")) {
         runtime_sec = std::stoi(argv[++i]);
+      } else if ((arg == "-f") || (arg == "--fs")) {
+        std::string new_fs = argv[++i];
+        if (new_fs == "local") {
+          fs = Filesystem::LOCAL;
+          info[3] = "LOCAL";
+        }
       }
     }
   }
@@ -228,16 +237,26 @@ void RunClientBenchmark(int argc, char* argv[]) {
 
   Status status;
   // Create a file and pad it to 1024-chunk size
-  std::string filename = "a/benchmark.txt";
+  std::string filename;
   std::string init_data(CHUNK_SIZE_IN_BYTES, 'x');
   long long num_chunk = 10;
-  long long write_offset = 0;
-  if (gfs_client.GetFileLength(filename) != num_chunk) {
+  if (fs == Filesystem::GFS) {
+    filename = "a/benchmark.txt";
+    long long write_offset = 0;
+    if (gfs_client.GetFileLength(filename) != num_chunk) {
+      for (int i = 0; i < num_chunk; i++) {
+        status = gfs_client.Write(init_data, filename, write_offset);
+        if (!status.ok())
+          std::cout << FormatStatus(status);
+        write_offset += init_data.size();
+      }
+    }
+  } else { // fs == Filesystem::LOCAL
+    // Truncate local file and write.
+    filename = "local_benchmark.txt";
+    std::ofstream of(filename, std::ios_base::out | std::ios_base::binary | std::ios_base::trunc);
     for (int i = 0; i < num_chunk; i++) {
-      status = gfs_client.Write(init_data, filename, write_offset);
-      if (!status.ok())
-        std::cout << FormatStatus(status);
-      write_offset += init_data.size();
+      of << init_data;
     }
   }
 
@@ -247,7 +266,8 @@ void RunClientBenchmark(int argc, char* argv[]) {
   const long long kMaxOffset = num_chunk * CHUNK_SIZE_IN_BYTES;
   std::string buf;
 
-  struct timespec start, end;
+  std::random_device rd;
+  std::mt19937 gen(rd());struct timespec start, end;
   //benchmark_start_t = clock();
   clock_gettime(CLOCK_REALTIME, &start);
   clock_gettime(CLOCK_REALTIME, &end);
@@ -255,19 +275,38 @@ void RunClientBenchmark(int argc, char* argv[]) {
     // Check if read/write on the boundary of chunks
     long long chunk_id = bm_offset / CHUNK_SIZE_IN_BYTES;
     long long remain_in_last_chunk = bm_offset - (chunk_id * CHUNK_SIZE_IN_BYTES);
-    if (remain_in_last_chunk < window_size) {
+    if ((CHUNK_SIZE_IN_BYTES - remain_in_last_chunk) < window_size) {
       bm_offset = (chunk_id + 1) * CHUNK_SIZE_IN_BYTES - window_size;
     }
 
+    std::cout << "bm_offset = " << bm_offset%(64*1024*1024) << std::endl;
     struct timespec bm_start, bm_end;
     clock_gettime(CLOCK_REALTIME, &bm_start);
     if (op == Operation::READ) {
-      status = gfs_client.Read(&buf, filename, bm_offset, window_size);
+      if (fs == Filesystem::GFS) {
+        status = gfs_client.Read(&buf, filename, bm_offset, window_size);
+      } else { // fs == Filesystem::LOCAL
+        std::ifstream infile(filename, std::ios_base::in | std::ios_base::binary);
+        infile.seekg(bm_offset);
+        std::string data(window_size, ' ');
+        infile.read(&data[0], window_size);
+        if (infile.gcount() != window_size) {
+          std::cout << "Read " << infile.gcount() << ", expected " << window_size << std::endl;
+        }
+        status = Status::OK;
+      }
     } else if (op == Operation::APPEND) {
-      gfs_client.Append(bm_data, filename,
-                        gfs_client.GetFileLength(filename) - 1);
+        gfs_client.Append(bm_data, filename,
+                          gfs_client.GetFileLength(filename) - 1);
     } else {
-      status = gfs_client.Write(bm_data, filename, bm_offset);
+      if (fs == Filesystem::GFS) {
+        status = gfs_client.Write(bm_data, filename, bm_offset);
+      } else { // fs == Filesystem::LOCAL
+        std::ofstream of(filename, std::ios_base::in | std::ios_base::out | std::ios_base::binary);
+        of.seekp(bm_offset);
+        of.write(bm_data.c_str(), window_size);
+        status = Status::OK;
+      }
     }
     clock_gettime(CLOCK_REALTIME, &bm_end);
     if (!status.ok())
@@ -285,8 +324,8 @@ void RunClientBenchmark(int argc, char* argv[]) {
     if (mode == Method::SEQUENTIAL) {
       bm_offset += window_size;
     } else {
-      double ratio = (rand() % 100) / 100;
-      bm_offset = floor(ratio * (kMaxOffset - CHUNK_SIZE_IN_BYTES));
+      std::uniform_int_distribution<> dis(0, kMaxOffset - 1);
+      bm_offset = dis(gen);
     }
     if ((bm_offset + window_size) > kMaxOffset)
       bm_offset = 0;
