@@ -37,7 +37,7 @@ class GFSClient {
   Status Write(const std::string& buf, const std::string& filename, const long long offset);
 
   // Appends the byte array to a file. Returns the off-set that the content resides in.
-  int Append(char *buf, const std::string& filename);
+  int Append(const std::string& buf, const std::string& filename, int chunk_index);
 
   // Client functions to report data to Benchmark Server
   void ClientBMHandshake(const std::string &operation, const std::string &method, int size);
@@ -65,7 +65,7 @@ class GFSClient {
   // Print all the file as for now
   void FindMatchingFiles(const std::string& prefix);
 
-  // Gets number of chunks in the file
+  // Gets number of chunks in the file, prints and returns an int
   int GetFileLength(const std::string& filename);
 
   // Get chunkhandle and locations of a file for reading
@@ -80,9 +80,10 @@ class GFSClient {
                          const std::string& filename,
                          int64_t chunk_index);
 
-private:
+ private:
   // Gets connection to chunkserver, opening a new one if necessary
   gfs::GFS::Stub* GetChunkserverStub(const std::string& location);
+
 
   std::map<std::string, std::unique_ptr<gfs::GFS::Stub>> stub_cs_;
   std::unique_ptr<gfs::GFSMaster::Stub> stub_master_;

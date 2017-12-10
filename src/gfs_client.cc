@@ -37,6 +37,8 @@ using gfs::ReadChunkRequest;
 using gfs::ReadChunkReply;
 using gfs::WriteChunkRequest;
 using gfs::WriteChunkReply;
+using gfs::AppendRequest;
+using gfs::AppendReply;
 using gfs::PushDataRequest;
 using gfs::PushDataReply;
 using gfs::GFS;
@@ -96,12 +98,13 @@ void RunClientCommand(int argc, char* argv[]) {
             << "Options:\n"
             << "\tread\t<filepath>\t<offset>\t<length>\n"
             << "\twrite\t<filepath>\t<offset>\t<data>\n"
+            << "\tappend\t<filepath>\t<data>\n"
             << "\tls\t<prefix>\n"
             << "\tmv\t<filepath>\t<new_filepath>\n"
             << "\trm\t<filepath>\n"
             << "\tquit"
             << std::endl;
-  
+
   while (true) {
     std::cout << "> ";
     // Read an entire line and then read tokens from the line.
@@ -127,6 +130,15 @@ void RunClientCommand(int argc, char* argv[]) {
       if (line_stream >> filepath >> offset >> data) {
         Status status = gfs_client.Write(data, filepath, offset);
         std::cout << "Write status: " << FormatStatus(status) << std::endl;
+        continue;
+      } 
+    }else if (cmd == "append") {
+      std::string filepath, data;
+      int offset;
+      if (line_stream >> filepath >> data) {
+        int64_t chunk_index = gfs_client.GetFileLength(filepath);
+        offset = gfs_client.Append(data, filepath, chunk_index);
+        std::cout << "Appended to offset: " << offset << std::endl;
         continue;
       }
     } else if (cmd == "ls") {
@@ -164,7 +176,7 @@ void RunClientBenchmark(int argc, char* argv[]) {
   const int kWarmUpTime_sec = 5;
   int runtime_sec = 10;
   int client_id = 0;
-  enum Operation {READ, WRITE};
+  enum Operation {READ, WRITE, APPEND};
   enum Method {SEQUENTIAL, RANDOM};
   enum Filesystem {GFS, LOCAL};
   Operation op = Operation::READ;
@@ -184,6 +196,9 @@ void RunClientBenchmark(int argc, char* argv[]) {
         if (operation == "write") {
           op = Operation::WRITE;
           info[0] = "WRITE";
+        } else if (operation == "append") {
+          op = Operation::APPEND;
+          info[0] = "APPEND";
         }
       } else if ((arg == "-m") || (arg == "--method")) {
         std::string method = argv[++i];
@@ -280,6 +295,9 @@ void RunClientBenchmark(int argc, char* argv[]) {
         }
         status = Status::OK;
       }
+    } else if (op == Operation::APPEND) {
+        gfs_client.Append(bm_data, filename,
+                          gfs_client.GetFileLength(filename) - 1);
     } else {
       if (fs == Filesystem::GFS) {
         status = gfs_client.Write(bm_data, filename, bm_offset);
@@ -532,8 +550,76 @@ Status GFSClient::Write(const std::string& buf, const std::string& filename, con
                     locations, lease_holder.primary_location());
 }
 
-Status GFSClient::ReadChunk(const int chunkhandle, const long long offset,
-                            const int length, const std::string& location, std::string *buf) {
+// Returns offset in file that data was appended to
+int GFSClient::Append(const std::string& buf, const std::string& filename,
+                      int chunk_index) {
+  int offset = -1;
+
+  // Check if data is > MAX_APPEND_SIZE_IN_BYTES
+  if (buf.length() > MAX_APPEND_SIZE_IN_BYTES) {
+    std::cout << "Append size (" << buf.length() << " is > " <<
+              MAX_APPEND_SIZE_IN_BYTES << "MiB" << std::endl;
+    return 0;
+  }
+
+  FindLeaseHolderReply lease_holder;
+  Status status = FindLeaseHolder(&lease_holder, filename, chunk_index);
+  if (!status.ok()) {
+    std::cout << "FindLeaseHolder failed" << std::endl;
+    return 0;
+  }
+  std::vector<std::string> locations;
+  for (const auto& location : lease_holder.locations()) {
+    locations.push_back(location);
+  }
+
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+
+  for (const auto& location : locations) {
+    PushData(GetChunkserverStub(location), buf, tv);
+  }
+
+  AppendRequest request;
+  AppendReply reply;
+  ClientContext context;
+
+  Timestamp timestamp;
+  timestamp.set_seconds(tv.tv_sec);
+  timestamp.set_nanos(tv.tv_usec * 1000);
+
+  request.set_allocated_timestamp(&timestamp);
+  request.set_client_id(client_id_);
+  request.set_chunkhandle(lease_holder.chunkhandle());
+  request.set_length(buf.length());
+
+  for (const auto& location : locations) {
+    if (location != lease_holder.primary_location()) {
+      request.add_locations(location);
+    }
+  }
+
+  status = GetChunkserverStub(lease_holder.primary_location())->Append(&context, request, &reply);
+  request.release_timestamp();
+
+  if (status.ok()) {
+    offset = reply.offset();
+    return offset;
+  } else if (status.error_code() == grpc::RESOURCE_EXHAUSTED) {
+    std::cout << "Reached end of chunk; We'll try another Append" << std::endl;
+    offset = Append(buf, filename, ++chunk_index);
+    if (offset != -1) {
+      std::cout << "Append Succeeded in 2nd try; Offset = " << offset << std::endl;
+    }
+    return offset;
+  } else {
+    std::cout << "Append failure" << std::endl;
+    return -1;
+  }
+  return offset;
+}
+
+Status GFSClient::ReadChunk(const int chunkhandle, const long long offset, const int length, const std::string& location, std::string *buf) {
   // Data we are sending to the server.
   ReadChunkRequest request;
   request.set_chunkhandle(chunkhandle);
