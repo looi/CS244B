@@ -54,7 +54,8 @@ service GFS {
   // Sends a ping
   rpc ClientServerPing (PingRequest) returns (PingReply) {}
 
-  // TODO: AppendChunk
+  // Append
+  rpc Append (AppendRequest) returns (AppendReply) {}
 
   // Master -> Chunkserver RPCs
   // --------------------------
@@ -105,6 +106,16 @@ message SerializedWriteRequest {
   google.protobuf.Timestamp timestamp = 2;
   int64 chunkhandle = 3;
   int64 offset = 4;
+  bool padded_chunk = 5;
+}
+
+// Append Request
+message AppendRequest {
+  int64 client_id = 1;
+  google.protobuf.Timestamp timestamp = 2;
+  int64 chunkhandle = 3;
+  int64 length = 4;
+  repeated string locations = 5;
 }
 
 // Read Chunk Reply
@@ -121,6 +132,12 @@ message WriteChunkReply {
 
 message SerializedWriteReply {
   int64 bytes_written = 1;
+}
+
+// Append Reply
+message AppendReply {
+  int64 offset = 1;
+  int64 bytes_written = 2;
 }
 
 // PushData Request

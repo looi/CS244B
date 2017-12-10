@@ -123,7 +123,14 @@ int GFSServiceImpl::PerformLocalWriteChunk(const WriteChunkInfo& wc_info)
     return 0;
   }
 
-  std::ofstream outfile(filename.c_str(), std::ios::out | std::ios::binary);
+  // Open in r/w if it exists; Otherwise it's a new file
+  std::ofstream outfile(filename.c_str(), std::ios::in | std::ios::out | std::ios::binary);
+  if (!outfile.is_open())
+  {
+    outfile.clear();
+    outfile.open(filename.c_str(), std::ios::out | std::ios::binary);
+    assert(offset == 0);
+  }
   if (!outfile.is_open()) {
     std::cout << "can't open file for writing: " << filename << std::endl;
     return 0;
@@ -154,6 +161,7 @@ int GFSServiceImpl::SendSerializedWriteChunk(WriteChunkInfo& wc_info,
   request.set_allocated_timestamp(&wc_info.timestamp);
   request.set_chunkhandle(wc_info.chunkhandle);
   request.set_offset(wc_info.offset);
+  request.set_padded_chunk(wc_info.padded_chunk);
 
   Status status = stub->SerializedWrite(&context, request, &reply);
   request.release_timestamp();
@@ -179,6 +187,13 @@ Status GFSServiceImpl::SerializedWrite(ServerContext* context,
   wc_info.timestamp = request->timestamp();
   wc_info.chunkhandle = request->chunkhandle();
   wc_info.offset = request->offset();
+  wc_info.padded_chunk = request->padded_chunk();
+
+  if (wc_info.padded_chunk) {
+    if(!PadChunk(wc_info)) {
+      return Status(grpc::INTERNAL, "Couldn't complete PadChunk");
+    }
+  }
 
   bytes_written = PerformLocalWriteChunk(wc_info);
   reply->set_bytes_written(bytes_written);
@@ -196,6 +211,7 @@ Status GFSServiceImpl::WriteChunk(ServerContext* context,
   int bytes_written;
   WriteChunkInfo wc_info;
 
+  std::lock_guard<std::mutex> guard(write_mutex);
   std::cout << "Got server WriteChunk for chunkhandle = " << \
             request->chunkhandle() << std::endl;
 
@@ -203,6 +219,7 @@ Status GFSServiceImpl::WriteChunk(ServerContext* context,
   wc_info.timestamp = request->timestamp();
   wc_info.chunkhandle = request->chunkhandle();
   wc_info.offset = request->offset();
+  wc_info.padded_chunk = false;
 
   bytes_written = PerformLocalWriteChunk(wc_info);
 
@@ -231,6 +248,101 @@ Status GFSServiceImpl::WriteChunk(ServerContext* context,
   return Status::OK;
 }
 
+// PadChunk replaces the buffercache data to 0s of length remaining in the chunk
+bool GFSServiceImpl::PadChunk(const WriteChunkInfo& wc_info)
+{
+  ChunkId chunk_id;
+  chunk_id.client_id = wc_info.client_id;
+  Timestamp ts = wc_info.timestamp;
+  chunk_id.timestamp.tv_sec = ts.seconds();
+  chunk_id.timestamp.tv_usec = ts.nanos()/1000;
+  int offset = wc_info.offset;
+
+  std::lock_guard<std::mutex> guard(buffercache_mutex);
+
+  if (buffercache.find(chunk_id) == buffercache.end()) {
+    std::cout << "Chunk data doesn't exists in buffercache" << std::endl;
+    return false;
+  }
+
+  std::string padding_data(CHUNK_SIZE_IN_BYTES - offset, '0');
+  std::cout << "padding_data.len = " << padding_data.length() << std::endl;
+  buffercache[chunk_id] = padding_data;
+
+  return true;
+}
+
+Status GFSServiceImpl::Append(ServerContext* context,
+                              const AppendRequest* request,
+                              AppendReply* reply) {
+  int bytes_written, length, existing_length = 0;
+  WriteChunkInfo wc_info;
+
+  std::lock_guard<std::mutex> guard(write_mutex);
+
+  std::cout << "Got server Append for chunkhandle = " << \
+            request->chunkhandle() << std::endl;
+
+  wc_info.client_id = request->client_id();
+  wc_info.timestamp = request->timestamp();
+  wc_info.chunkhandle = request->chunkhandle();
+  wc_info.padded_chunk = false;
+  length = request->length();
+
+  // TODO: This length can be in an in-memory structure and avoid us from having
+  // to read the file
+  std::string filename = this->full_path + "/" + \
+                         std::to_string(wc_info.chunkhandle);
+  std::ifstream infile(filename.c_str(), std::ios::in | std::ios::binary);
+  if (infile) {
+    assert(infile.is_open() != 0);
+    infile.seekg(0, std::ios::end);
+    existing_length = infile.tellg();
+    infile.seekg(0, std::ios::beg);
+    infile.close();
+  }
+
+  wc_info.offset = existing_length;
+  if (existing_length + length > CHUNK_SIZE_IN_BYTES) {
+    if(!PadChunk(wc_info)) {
+      return Status(grpc::INTERNAL,
+                    "Couldn't complete Append. Pad Chunk failed");
+    }
+    wc_info.padded_chunk = true;
+  }
+
+  bytes_written = PerformLocalWriteChunk(wc_info);
+
+  // If the local write succeeded, send SerializedWrites to backups
+  if (bytes_written) {
+    for (const auto& location : request->locations()) {
+      std::cout << "CS location: " << location << std::endl;
+      if (location == location_me)
+        continue;
+      if (!SendSerializedWriteChunk(wc_info, location)) {
+        bytes_written = 0;
+        std::cout << "SerializedWrite failed for location: " << location
+                  << std::endl;
+        break;
+      }
+    }
+    ReportChunkInfo(wc_info.chunkhandle);
+  }
+
+  if (!bytes_written) {
+    return Status(grpc::INTERNAL, "Couldn't complete Append");
+  }
+
+  reply->set_bytes_written(bytes_written);
+  reply->set_offset(existing_length);
+
+  if (wc_info.padded_chunk) {
+    return Status(grpc::RESOURCE_EXHAUSTED, "Reached end of chunk");
+  }
+
+  return Status::OK;
+}
+
 Status GFSServiceImpl::PushData(ServerContext* context,
                                   const PushDataRequest* request,
                                   PushDataReply* reply) {
@@ -242,7 +354,7 @@ Status GFSServiceImpl::PushData(ServerContext* context,
   std::string data = request->data();
 
   std::cout << "Got server PushData for clientid = " << \
-            chunk_id.client_id /*<<" and data = " << data */<< std::endl;
+            chunk_id.client_id << /*" and data = " << data <<*/ std::endl;
 
   std::lock_guard<std::mutex> guard(buffercache_mutex);
 
@@ -289,6 +401,7 @@ void GFSServiceImpl::ServerMasterHeartbeat() {
   }
 
   while (true) {
+    //std::cout << "Heartbeat thread woke up" << std::endl;
     am_i_dead_mutex.lock();
     if (am_i_dead) {
       break;
@@ -326,6 +439,9 @@ void GFSServiceImpl::ServerMasterHeartbeat() {
     request.set_location(location_me);
 
     Status status = stub_master->Heartbeat(&context, request, &reply);
+    if (status.ok()) {
+     // std::cout << "New chunkhandle hearbeat sent " << std::endl;
+    }
     std::this_thread::sleep_for(std::chrono::seconds(HEARTBEAT_DURATION_SECONDS));
   }
 }

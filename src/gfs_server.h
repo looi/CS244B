@@ -14,6 +14,7 @@ typedef struct WriteChunkInfo {
   Timestamp timestamp;
   int chunkhandle;
   int offset;
+  bool padded_chunk;
 } WriteChunkInfo;
 
 struct cmpChunkId {
@@ -42,6 +43,9 @@ class GFSServiceImpl final : public GFS::Service {
 
   Status WriteChunk(ServerContext* context, const WriteChunkRequest* request,
                     WriteChunkReply* reply);
+
+  Status Append(ServerContext* context, const AppendRequest* request,
+                AppendReply* reply);
 
   Status PushData(ServerContext* context, const PushDataRequest* request,
                   PushDataReply* reply);
@@ -74,13 +78,15 @@ class GFSServiceImpl final : public GFS::Service {
 
   void ServerMasterHeartbeat();
 
+  bool PadChunk(const WriteChunkInfo& wc_info);
+
  private:
   std::unique_ptr<gfs::GFSMaster::Stub> stub_master;
   std::string full_path;
   std::string metadata_file;
   std::map<ChunkId, std::string, cmpChunkId> buffercache;
   std::map<int, int> metadata; // int chunkhandle, int version_no
-  std::mutex buffercache_mutex, metadata_mutex, am_i_dead_mutex;
+  std::mutex buffercache_mutex, metadata_mutex, am_i_dead_mutex, write_mutex;
   std::string location_me;
   int version_number;
   bool am_i_dead;
