@@ -73,6 +73,8 @@ class GFSBenchmarkServerImpl final : public GFSBenchmark::Service {
       while (!throughput_data[id].empty()) {
         i->second += (double)throughput_data[id].back() / size;
         throughput_data[id].pop_back();
+        time_data[id].pop_back();
+        duration_data[id].pop_back();
       }
     }
 
