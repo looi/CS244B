@@ -282,7 +282,7 @@ void RunClientBenchmark(int argc, char* argv[]) {
       if (fs == Filesystem::GFS) {
         status = gfs_client.Write(bm_data, filename, bm_offset);
       } else { // fs == Filesystem::LOCAL
-        std::ofstream of(filename, std::ios_base::out | std::ios_base::binary);
+        std::ofstream of(filename, std::ios_base::in | std::ios_base::out | std::ios_base::binary);
         of.seekp(bm_offset);
         of.write(bm_data.c_str(), window_size);
         status = Status::OK;
