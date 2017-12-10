@@ -69,7 +69,9 @@ Status GFSServiceImpl::ReadChunk(ServerContext* context,
   int chunkhandle = request->chunkhandle();
   int offset = request->offset();
   int length = request->length();
-  std::string data(length, ' ');
+  std::string data;
+  data.reserve(length);
+
   std::string filename = this->full_path + "/" + \
                          std::to_string(chunkhandle);
 
@@ -355,7 +357,8 @@ Status GFSServiceImpl::ReplicateChunks(ServerContext* context,
       int length = infile.tellg();
       infile.seekg(0, std::ios::beg);
 
-      std::string data(length, ' ');
+      std::string data;
+      data.reserve(length);
       infile.read(&data[0], length);
       if (infile.gcount() != length) {
         std::cout << "couldn't read " << length << " bytes out of " <<
@@ -366,7 +369,7 @@ Status GFSServiceImpl::ReplicateChunks(ServerContext* context,
       chunk_info->set_chunkhandle(chunk.chunkhandle());
       chunk_info->set_data(data);
       std::cout << "added chunk_info for " << chunk.chunkhandle() <<
-                " and data: " << data << std::endl;
+                /*" and data: " << data <<*/ std::endl;
     }
   }
 

@@ -164,14 +164,15 @@ void RunClientBenchmark(int argc, char* argv[]) {
   const int kWarmUpTime_sec = 5;
   int runtime_sec = 10;
   int client_id = 0;
-  enum Operation {READ, WRITE};
+  enum Operation {READ, WRITE, PING};
   enum Method {SEQUENTIAL, RANDOM};
   enum Filesystem {GFS, LOCAL};
   Operation op = Operation::READ;
   Method mode = Method::RANDOM;
   Filesystem fs = Filesystem::GFS;
   int window_size = 4096;
-  std::vector<std::string> info = {"READ", "RANDOM", "4096", "GFS"};
+  std::string filename = "a/benchmark.txt";
+  std::vector<std::string> info = {"READ", "RANDOM", "4096", "GFS", "a/benchmark.txt"};
 
   // Parse benchmark cmd arguments
   if (argc > 5) {
@@ -184,6 +185,9 @@ void RunClientBenchmark(int argc, char* argv[]) {
         if (operation == "write") {
           op = Operation::WRITE;
           info[0] = "WRITE";
+        } else if (operation == "ping") {
+          op = Operation::PING;
+          info[0] = "PING";
         }
       } else if ((arg == "-m") || (arg == "--method")) {
         std::string method = argv[++i];
@@ -202,6 +206,9 @@ void RunClientBenchmark(int argc, char* argv[]) {
           fs = Filesystem::LOCAL;
           info[3] = "LOCAL";
         }
+      } else if ((arg == "-n") || (arg == "--filename")) {
+        filename = argv[++i];
+        info[4] = filename;
       }
     }
   }
@@ -222,11 +229,9 @@ void RunClientBenchmark(int argc, char* argv[]) {
 
   Status status;
   // Create a file and pad it to 1024-chunk size
-  std::string filename;
   std::string init_data(CHUNK_SIZE_IN_BYTES, 'x');
-  long long num_chunk = 10;
+  long long num_chunk = 25;
   if (fs == Filesystem::GFS) {
-    filename = "a/benchmark.txt";
     long long write_offset = 0;
     if (gfs_client.GetFileLength(filename) != num_chunk) {
       for (int i = 0; i < num_chunk; i++) {
@@ -238,7 +243,6 @@ void RunClientBenchmark(int argc, char* argv[]) {
     }
   } else { // fs == Filesystem::LOCAL
     // Truncate local file and write.
-    filename = "local_benchmark.txt";
     std::ofstream of(filename, std::ios_base::out | std::ios_base::binary | std::ios_base::trunc);
     for (int i = 0; i < num_chunk; i++) {
       of << init_data;
@@ -264,10 +268,16 @@ void RunClientBenchmark(int argc, char* argv[]) {
       bm_offset = (chunk_id + 1) * CHUNK_SIZE_IN_BYTES - window_size;
     }
 
-    std::cout << "bm_offset = " << bm_offset%(64*1024*1024) << std::endl;
+    std::cout << "bm_offset = " << bm_offset << std::endl;
     struct timespec bm_start, bm_end;
     clock_gettime(CLOCK_REALTIME, &bm_start);
-    if (op == Operation::READ) {
+    if (op == Operation::PING) {
+      FindLocationsReply find_locations_reply;
+      gfs_client.FindLocations(&find_locations_reply, filename, 0, true);
+      std::string user("test");
+      gfs_client.ClientServerPing(user, find_locations_reply.locations(0));
+    } else if (op == Operation::READ) {
+      status = gfs_client.Read(&buf, filename, bm_offset, window_size);
       if (fs == Filesystem::GFS) {
         status = gfs_client.Read(&buf, filename, bm_offset, window_size);
       } else { // fs == Filesystem::LOCAL
@@ -294,7 +304,7 @@ void RunClientBenchmark(int argc, char* argv[]) {
     if (!status.ok())
       std::cout << FormatStatus(status);
     long long duration = 1e9 * (bm_end.tv_sec - bm_start.tv_sec) +
-                         bm_end.tv_nsec - bm_start.tv_nsec;
+        bm_end.tv_nsec - bm_start.tv_nsec;
 
     if (end.tv_sec - start.tv_sec > kWarmUpTime_sec) {
       // Pushing stats data to Benchmark Server after warm-up
@@ -449,9 +459,7 @@ std::string GFSClient::ClientServerPing(const std::string& user,
   // the server and/or tweak certain RPC behaviors.
   ClientContext context;
 
-  // The actual RPC.
-  Status status = stub_cs_[cs]->ClientServerPing(&context, request, &reply);
-
+  Status status = GetChunkserverStub(cs)->ClientServerPing(&context, request, &reply);
   // Act upon its status.
   if (status.ok()) {
     return reply.message();

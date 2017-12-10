@@ -6,7 +6,7 @@ prepare_ssd()
   echo "Preparing SSD ..."
   for server in "$MasterAddr" "$ClientAddr" "${ChunkServerAddr[@]}"
   do
-    runlocalssh ssh root@"$server" mkfs -t ext4 /dev/elephant/elephant_0_0; mkdir /export/ssda; mount -t ext4 -o noatime,discard,dioread_nolock /dev/elephant/elephant_0_0 /export/ssda
+    runlocalssh ssh root@"$server" mkfs -t ext4 /dev/elephant/elephant_0_0; rm -rf /export/ssda; mkdir /export/ssda; mount -t ext4 -o noatime,discard,dioread_nolock /dev/elephant/elephant_0_0 /export/ssda
   done
 }
 
@@ -14,11 +14,11 @@ MasterPort=50052
 ServerPort=11111
 BMServerPort=8888
 
-MasterAddr=$1
-ClientAddr=$2
+MasterAddr=$2
+ClientAddr=$3
 
-gfspath="/export/ssda/gfs_niketa"
-filespath="/export/ssda/gfs_niketa/files"
+gfspath=$1
+filespath="$gfspath/files"
 
 # function to prepare gfs
 prepare_gfs()
@@ -32,13 +32,13 @@ prepare_gfs()
   done
 }
 
-if [ "$#" -lt 5 ]; then
-  echo "usage: run_gfs.sh MasterAddr ClientAddr ChunkServerAddr*; Need at least 3 Chunk Servers"
+if [ "$#" -lt 6 ]; then
+  echo "usage: run_gfs.sh path MasterAddr ClientAddr ChunkServerAddr*; Need at least 3 Chunk Servers"
   exit 1
 fi
-shift 2
+shift 3
 ChunkServerAddr=( "$@" )
-prepare_ssd
+#prepare_ssd
 prepare_gfs
 
 echo "Starting GFS Master ..."
