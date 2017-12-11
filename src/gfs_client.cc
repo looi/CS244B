@@ -336,7 +336,7 @@ void RunClientBenchmark(int argc, char* argv[]) {
     long long duration = 1e9 * (bm_end.tv_sec - bm_start.tv_sec) +
         bm_end.tv_nsec - bm_start.tv_nsec;
     // Pushing stats data to Benchmark Server after warm-up
-    gfs_client.BMAddData((double)duration/num_clocks);
+    gfs_client.BMAddData((double)duration/offsets.size());
     std::cout << "window size: " << window_size << " duration: " << duration
               << "; throughput (B/s) = " << (double) (window_size*num_windows)/(duration*1e-9) << std::endl;
   }
