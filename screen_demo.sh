@@ -1,6 +1,9 @@
 #!/bin/bash
 # Screen cs244demo needs to be a *new* screen running already.
 # In a separate terminal, run screen -S cs244demo
+
+rm -rf tmp_gfs*
+
 screen -S cs244demo -X split -v
 screen -S cs244demo -X split
 screen -S cs244demo -X stuff "bin/gfs_master tmp_gfs_master.sqlite3 127.0.0.1:50052^M"

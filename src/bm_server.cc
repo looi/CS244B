@@ -55,7 +55,6 @@ class GFSBenchmarkServerImpl final : public GFSBenchmark::Service {
     duration_data[id].push_back(duration);
     throughput_data[id].push_back((double) size[id]/(duration*1e-9));
     time_data[id].push_back(now);
-
     reply->set_message("OK_AddData");
     bm_mutex.unlock();
     return Status::OK;
@@ -66,7 +65,6 @@ class GFSBenchmarkServerImpl final : public GFSBenchmark::Service {
     for (auto i = throughput_data.begin(); i != throughput_data.end(); ++i) {
       avg_throughput_data[i->first] = 0;
     }
-
     // Calculate avg of all client
     for (auto i = avg_throughput_data.begin(); i != avg_throughput_data.end(); ++i) {
       int id = i->first, size = throughput_data[id].size();
@@ -82,11 +80,11 @@ class GFSBenchmarkServerImpl final : public GFSBenchmark::Service {
     for (auto i = avg_throughput_data.begin(); i != avg_throughput_data.end(); ++i) {
       total_throughput += i->second;
       std::cout << "Avg for Client[" << i->first << "] throughput (B/s) = "
-                << avg_throughput_data[i->first] << '\n';
+                << avg_throughput_data[i->first] << std::endl;
     }
 
     if (avg_throughput_data.size() > 1) {
-      std::cout << "Total throughput = " << total_throughput;
+      std::cout << "Total throughput = " << total_throughput << std::endl;
     }
   }
 

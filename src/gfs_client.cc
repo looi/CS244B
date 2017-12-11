@@ -134,11 +134,9 @@ void RunClientCommand(int argc, char* argv[]) {
       } 
     }else if (cmd == "append") {
       std::string filepath, data;
-      int offset;
       if (line_stream >> filepath >> data) {
-        int64_t chunk_index = gfs_client.GetFileLength(filepath);
-        offset = gfs_client.Append(data, filepath, chunk_index);
-        std::cout << "Appended to offset: " << offset << std::endl;
+        gfs_client.Append(data, filepath,
+                          gfs_client.GetFileLength(filepath) - 1);
         continue;
       }
     } else if (cmd == "ls") {
@@ -173,8 +171,6 @@ void RunClientCommand(int argc, char* argv[]) {
 
 void RunClientBenchmark(int argc, char* argv[]) {
   // Set up default parameters
-  const int kWarmUpTime_sec = 5;
-  int runtime_sec = 10;
   int client_id = 0;
   enum Operation {READ, WRITE, PING, APPEND};
   enum Method {SEQUENTIAL, RANDOM};
@@ -183,6 +179,8 @@ void RunClientBenchmark(int argc, char* argv[]) {
   Method mode = Method::RANDOM;
   Filesystem fs = Filesystem::GFS;
   int window_size = 4096;
+  int bytes_read_per_clock = 1073741824;
+  int num_clocks = 5;
   std::string filename = "a/benchmark.txt";
   std::vector<std::string> info = {"READ", "RANDOM", "4096", "GFS", "a/benchmark.txt"};
 
@@ -213,8 +211,10 @@ void RunClientBenchmark(int argc, char* argv[]) {
       } else if ((arg == "-s") || (arg == "--size")) {
         window_size = std::stoi(argv[++i]);
         info[2] = std::to_string(window_size);
-      } else if ((arg == "-t") || (arg == "--time")) {
-        runtime_sec = std::stoi(argv[++i]);
+      } else if (arg == "-b") {
+        bytes_read_per_clock = std::stoi(argv[++i]);
+      } else if (arg == "-c") {
+        num_clocks = std::stoi(argv[++i]);
       } else if ((arg == "-f") || (arg == "--fs")) {
         std::string new_fs = argv[++i];
         if (new_fs == "local") {
@@ -265,71 +265,21 @@ void RunClientBenchmark(int argc, char* argv[]) {
   }
 
   // Run benchmark.
-  std::string bm_data(window_size, 'x');
   long long bm_offset = 0;
+  int num_windows = bytes_read_per_clock / window_size;
+  std::vector<int> offsets;
   const long long kMaxOffset = num_chunk * CHUNK_SIZE_IN_BYTES;
-  std::string buf;
-
   std::random_device rd;
-  std::mt19937 gen(rd());struct timespec start, end;
-  //benchmark_start_t = clock();
-  clock_gettime(CLOCK_REALTIME, &start);
-  clock_gettime(CLOCK_REALTIME, &end);
-  while (end.tv_sec - start.tv_sec < kWarmUpTime_sec + runtime_sec) {
+  std::mt19937 gen(rd());
+  for (int window_num = 0; window_num < num_windows; window_num++) {
     // Check if read/write on the boundary of chunks
     long long chunk_id = bm_offset / CHUNK_SIZE_IN_BYTES;
     long long remain_in_last_chunk = bm_offset - (chunk_id * CHUNK_SIZE_IN_BYTES);
     if ((CHUNK_SIZE_IN_BYTES - remain_in_last_chunk) < window_size) {
       bm_offset = (chunk_id + 1) * CHUNK_SIZE_IN_BYTES - window_size;
     }
-
     std::cout << "bm_offset = " << bm_offset << std::endl;
-    struct timespec bm_start, bm_end;
-    clock_gettime(CLOCK_REALTIME, &bm_start);
-    if (op == Operation::PING) {
-      FindLocationsReply find_locations_reply;
-      gfs_client.FindLocations(&find_locations_reply, filename, 0, true);
-      std::string user("test");
-      gfs_client.ClientServerPing(user, find_locations_reply.locations(0));
-    } else if (op == Operation::READ) {
-      status = gfs_client.Read(&buf, filename, bm_offset, window_size);
-      if (fs == Filesystem::GFS) {
-        status = gfs_client.Read(&buf, filename, bm_offset, window_size);
-      } else { // fs == Filesystem::LOCAL
-        std::ifstream infile(filename, std::ios_base::in | std::ios_base::binary);
-        infile.seekg(bm_offset);
-        std::string data(window_size, ' ');
-        infile.read(&data[0], window_size);
-        if (infile.gcount() != window_size) {
-          std::cout << "Read " << infile.gcount() << ", expected " << window_size << std::endl;
-        }
-        status = Status::OK;
-      }
-    } else if (op == Operation::APPEND) {
-        gfs_client.Append(bm_data, filename,
-                          gfs_client.GetFileLength(filename) - 1);
-    } else {
-      if (fs == Filesystem::GFS) {
-        status = gfs_client.Write(bm_data, filename, bm_offset);
-      } else { // fs == Filesystem::LOCAL
-        std::ofstream of(filename, std::ios_base::in | std::ios_base::out | std::ios_base::binary);
-        of.seekp(bm_offset);
-        of.write(bm_data.c_str(), window_size);
-        status = Status::OK;
-      }
-    }
-    clock_gettime(CLOCK_REALTIME, &bm_end);
-    if (!status.ok())
-      std::cout << FormatStatus(status);
-    long long duration = 1e9 * (bm_end.tv_sec - bm_start.tv_sec) +
-        bm_end.tv_nsec - bm_start.tv_nsec;
-
-    if (end.tv_sec - start.tv_sec > kWarmUpTime_sec) {
-      // Pushing stats data to Benchmark Server after warm-up
-      gfs_client.BMAddData(duration);
-      std::cout << "window size: " << window_size << " duration: " << duration
-                << "; throughput (B/s) = " << (double) window_size/(duration*1e-9) << std::endl;
-    }
+    offsets.push_back(bm_offset);
 
     if (mode == Method::SEQUENTIAL) {
       bm_offset += window_size;
@@ -339,7 +289,56 @@ void RunClientBenchmark(int argc, char* argv[]) {
     }
     if ((bm_offset + window_size) > kMaxOffset)
       bm_offset = 0;
-    clock_gettime(CLOCK_REALTIME, &end);
+  }
+
+  std::string bm_data(window_size, 'x');
+  std::string buf;
+
+  for (int clock_num = 0; clock_num < num_clocks; clock_num++) {
+    struct timespec bm_start, bm_end;
+    clock_gettime(CLOCK_REALTIME, &bm_start);
+    for (int offset : offsets) {
+      if (op == Operation::PING) {
+        FindLocationsReply find_locations_reply;
+        gfs_client.FindLocations(&find_locations_reply, filename, 0, true);
+        std::string user("test");
+        gfs_client.ClientServerPing(user, find_locations_reply.locations(0));
+      } else if (op == Operation::READ) {
+        if (fs == Filesystem::GFS) {
+          status = gfs_client.Read(&buf, filename, offset, window_size);
+        } else { // fs == Filesystem::LOCAL
+          std::ifstream infile(filename, std::ios_base::in | std::ios_base::binary);
+          infile.seekg(offset);
+          std::string data(window_size, ' ');
+          infile.read(&data[0], window_size);
+          if (infile.gcount() != window_size) {
+            std::cout << "Read " << infile.gcount() << ", expected " << window_size << std::endl;
+          }
+          status = Status::OK;
+        }
+      } else if (op == Operation::APPEND) {
+          gfs_client.Append(bm_data, filename,
+                            gfs_client.GetFileLength(filename) - 1);
+      } else {
+        if (fs == Filesystem::GFS) {
+          status = gfs_client.Write(bm_data, filename, offset);
+        } else { // fs == Filesystem::LOCAL
+          std::ofstream of(filename, std::ios_base::in | std::ios_base::out | std::ios_base::binary);
+          of.seekp(offset);
+          of.write(bm_data.c_str(), window_size);
+          status = Status::OK;
+        }
+      }
+      if (!status.ok())
+        std::cout << FormatStatus(status);
+    }
+    clock_gettime(CLOCK_REALTIME, &bm_end);
+    long long duration = 1e9 * (bm_end.tv_sec - bm_start.tv_sec) +
+        bm_end.tv_nsec - bm_start.tv_nsec;
+    // Pushing stats data to Benchmark Server after warm-up
+    gfs_client.BMAddData(duration);
+    std::cout << "window size: " << window_size << " duration: " << duration
+              << "; throughput (B/s) = " << (double) (window_size*num_windows)/(duration*1e-9) << std::endl;
   }
 }
 
