@@ -46,7 +46,7 @@ class GFSBenchmarkServerImpl final : public GFSBenchmark::Service {
    AddDataReply* reply) override {
     bm_mutex.lock();
     int id = request->id();
-    int duration = request->duration(); // in nanosecond
+    double duration = request->duration(); // in nanosecond
     clock_gettime(CLOCK_REALTIME, &now);
     if (time_data[id].size() >= 1 && now.tv_sec != time_data[id].back().tv_sec) {
       PrintLastSecAverage(id);
@@ -94,7 +94,7 @@ class GFSBenchmarkServerImpl final : public GFSBenchmark::Service {
   std::map<int, std::string> operation;
   std::map<int, std::string> method;
   std::map<int, int> size;
-  std::map<int, std::vector<long long>> duration_data;
+  std::map<int, std::vector<double>> duration_data;
   std::map<int, std::vector<double>> throughput_data;
   std::map<int, double> avg_throughput_data; 
   std::map<int, std::vector<timespec>> time_data;

@@ -41,7 +41,7 @@ class GFSClient {
 
   // Client functions to report data to Benchmark Server
   void ClientBMHandshake(const std::string &operation, const std::string &method, int size);
-  void BMAddData(long long duration_ms);
+  void BMAddData(double duration_ms);
 
   // Helper funtions (TODO: might need to move to private)
 

@@ -336,7 +336,7 @@ void RunClientBenchmark(int argc, char* argv[]) {
     long long duration = 1e9 * (bm_end.tv_sec - bm_start.tv_sec) +
         bm_end.tv_nsec - bm_start.tv_nsec;
     // Pushing stats data to Benchmark Server after warm-up
-    gfs_client.BMAddData(duration);
+    gfs_client.BMAddData((double)duration/num_clocks);
     std::cout << "window size: " << window_size << " duration: " << duration
               << "; throughput (B/s) = " << (double) (window_size*num_windows)/(duration*1e-9) << std::endl;
   }
@@ -453,7 +453,7 @@ void GFSClient::ClientBMHandshake(
   //std::cout << "Send data to BM got reply: " << reply.message();
 }
 
-void GFSClient::BMAddData(long long duration) {
+void GFSClient::BMAddData(double duration) {
   AddDataRequest request;
   request.set_id(client_id_);
   request.set_duration(duration);

@@ -33,7 +33,7 @@ message ClientBMHandshakeReply {
 
 message AddDataRequest {
   int64 id = 1;
-  int64 duration = 2;
+  double duration = 2;
 }
 
 message AddDataReply {
